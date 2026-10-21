@@ -86,7 +86,7 @@ namespace HandheldCompanion.Targets
 
             if (gamepadMotion is not null)
             {
-                gamepadMotion.GetRawGyro(out float gx, out float gy, out float gz);
+                gamepadMotion.GetCalibratedGyro(out float gx, out float gy, out float gz);
                 gamepadMotion.GetRawAcceleration(out float ax, out float ay, out float az);
                 short gxs = InputUtils.RoundClampToShort(InputUtils.Clamp(gx, -2048.0f, 2048.0f) * 16.0f);
                 short gys = InputUtils.RoundClampToShort(InputUtils.Clamp(gy, -2048.0f, 2048.0f) * 16.0f);
