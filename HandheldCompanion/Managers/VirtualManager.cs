@@ -652,7 +652,9 @@ namespace HandheldCompanion.Managers
 
         /// <summary>
         /// Compares gyro states with loose thresholds to ignore sensor noise.
-        /// Gyro/accel data changes constantly; we only detect large meaningful movements.
+        /// While motion is in use there is no threshold: Steam and games integrate gyro and
+        /// apply their own deadzone, so dropping small samples shows up as a hard deadzone
+        /// and slow pans stair-step. Real controllers send every sample.
         /// ponytail: Ceiling—this compares all sensor states which is O(n). For strict dedup, 
         /// compare only the "active" sensor. Upgrade path: accept SensorState hint or cache last active.
         /// </summary>
@@ -660,6 +662,9 @@ namespace HandheldCompanion.Managers
         {
             if (previous is null)
                 return true; // First update, always send
+
+            if (SensorsManager.ActiveSensorFamily != DeviceUtils.SensorFamily.None)
+                return true; // Motion in use, send every sample
 
             // Loose thresholds: 1.0 deg/s for gyro, 0.2g for accel (human-perceptible movements)
             const float gyroThreshold = 1.0f;

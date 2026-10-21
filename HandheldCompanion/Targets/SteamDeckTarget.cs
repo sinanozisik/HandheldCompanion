@@ -91,7 +91,7 @@ namespace HandheldCompanion.Targets
             Vector3 accel;
             if (gamepadMotion is not null)
             {
-                gamepadMotion.GetRawGyro(out gyro.X, out gyro.Y, out gyro.Z);
+                gamepadMotion.GetCalibratedGyro(out gyro.X, out gyro.Y, out gyro.Z);
                 gamepadMotion.GetRawAcceleration(out accel.X, out accel.Y, out accel.Z);
             }
             else
