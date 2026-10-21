@@ -2563,7 +2563,7 @@ namespace HandheldCompanion.Properties {
         }
         
         /// <summary>
-        ///   Looks up a localized string similar to Emulated DualSense controller.
+        ///   Looks up a localized string similar to Emulated DualSense Edge controller.
         /// </summary>
         public static string Enum_HIDmode_DualSenseController {
             get {
