@@ -1653,6 +1653,171 @@ namespace HandheldCompanion.ViewModels
         }
         #endregion
 
+        #region Framerate limit overrides
+        // slots use PowerLineStatus keys: 0 = on battery (DC), 1 = plugged in (AC)
+        private const int FramerateSlotDC = 0;
+        private const int FramerateSlotAC = 1;
+
+        private static readonly IReadOnlyList<FramerateModeOption> GameFramerateModeOptions =
+        [
+            new(FramerateLimitMode.Inherit, "Use default profile"),
+            new(FramerateLimitMode.NoLimit, "No limit"),
+            new(FramerateLimitMode.Limit, "Limit"),
+        ];
+
+        private static readonly IReadOnlyList<FramerateModeOption> DefaultFramerateModeOptions =
+        [
+            new(FramerateLimitMode.Inherit, "Use power profile"),
+            new(FramerateLimitMode.NoLimit, "No limit"),
+            new(FramerateLimitMode.Limit, "Limit"),
+        ];
+
+        public IReadOnlyList<FramerateModeOption> FramerateModeOptions =>
+            SelectedProfile?.Default == true ? DefaultFramerateModeOptions : GameFramerateModeOptions;
+
+        public int FramerateOverrideMinimum => 10;
+        public int FramerateOverrideMaximum => 500;
+
+        public FramerateModeOption? SelectedFramerateModeDC
+        {
+            get => FramerateModeOptions.FirstOrDefault(o => o.Mode == GetFramerateMode(FramerateSlotDC));
+            set { if (value is not null) SetFramerateMode(FramerateSlotDC, value.Mode); }
+        }
+
+        public FramerateModeOption? SelectedFramerateModeAC
+        {
+            get => FramerateModeOptions.FirstOrDefault(o => o.Mode == GetFramerateMode(FramerateSlotAC));
+            set { if (value is not null) SetFramerateMode(FramerateSlotAC, value.Mode); }
+        }
+
+        public bool IsFramerateLimitDC => GetFramerateMode(FramerateSlotDC) == FramerateLimitMode.Limit;
+        public bool IsFramerateLimitAC => GetFramerateMode(FramerateSlotAC) == FramerateLimitMode.Limit;
+
+        public double FramerateValueDC
+        {
+            get => GetPerformanceOverrides(FramerateSlotDC, false)?.FramerateValue ?? 60;
+            set => SetFramerateValue(FramerateSlotDC, value);
+        }
+
+        public double FramerateValueAC
+        {
+            get => GetPerformanceOverrides(FramerateSlotAC, false)?.FramerateValue ?? 60;
+            set => SetFramerateValue(FramerateSlotAC, value);
+        }
+
+        public string FramerateHintDC => GetFramerateHint(FramerateSlotDC);
+        public string FramerateHintAC => GetFramerateHint(FramerateSlotAC);
+
+        private PerformanceOverrides? GetPerformanceOverrides(int slot, bool create)
+        {
+            if (SelectedProfile is null)
+                return null;
+
+            SelectedProfile.PerformanceOverrides ??= new();
+            if (!SelectedProfile.PerformanceOverrides.TryGetValue(slot, out PerformanceOverrides? overrides) || overrides is null)
+            {
+                if (!create)
+                    return null;
+
+                overrides = new();
+                SelectedProfile.PerformanceOverrides[slot] = overrides;
+            }
+
+            return overrides;
+        }
+
+        private FramerateLimitMode GetFramerateMode(int slot)
+        {
+            return GetPerformanceOverrides(slot, false)?.FramerateMode ?? FramerateLimitMode.Inherit;
+        }
+
+        private PowerProfile? GetSlotPowerProfile(int slot)
+        {
+            if (SelectedProfile is null || !SelectedProfile.PowerProfiles.TryGetValue(slot, out Guid guid))
+                return null;
+
+            return ManagerFactory.powerProfileManager.GetProfile(guid);
+        }
+
+        private void SetFramerateMode(int slot, FramerateLimitMode mode)
+        {
+            PerformanceOverrides? overrides = GetPerformanceOverrides(slot, true);
+            if (overrides is null || overrides.FramerateMode == mode)
+                return;
+
+            // start a new limit from the value that currently applies
+            if (mode == FramerateLimitMode.Limit && overrides.FramerateValue <= 0)
+            {
+                (FramerateLimitMode currentMode, int currentValue, _) = ManagerFactory.powerProfileManager.ResolveFramerateLimit(SelectedProfile, slot, GetSlotPowerProfile(slot));
+                overrides.FramerateValue = currentMode == FramerateLimitMode.Limit && currentValue > 0 ? currentValue : 60;
+            }
+
+            overrides.FramerateMode = mode;
+            RefreshFramerateOverrides();
+
+            if (!isLoadingProfile)
+                UpdateProfile();
+        }
+
+        private void SetFramerateValue(int slot, double value)
+        {
+            if (double.IsNaN(value))
+                return;
+
+            PerformanceOverrides? overrides = GetPerformanceOverrides(slot, true);
+            if (overrides is null)
+                return;
+
+            int framerate = Math.Clamp((int)Math.Round(value), FramerateOverrideMinimum, FramerateOverrideMaximum);
+            if (overrides.FramerateValue == framerate)
+                return;
+
+            overrides.FramerateValue = framerate;
+            RefreshFramerateOverrides();
+
+            if (!isLoadingProfile)
+                UpdateProfile();
+        }
+
+        private string GetFramerateHint(int slot)
+        {
+            if (SelectedProfile is null)
+                return string.Empty;
+
+            PowerProfile? powerProfile = GetSlotPowerProfile(slot);
+            (FramerateLimitMode mode, int value, FramerateLimitSource source) = ManagerFactory.powerProfileManager.ResolveFramerateLimit(SelectedProfile, slot, powerProfile);
+
+            string effective = mode switch
+            {
+                FramerateLimitMode.Limit => $"{value} FPS",
+                FramerateLimitMode.NoLimit => "No limit",
+                _ => "RTSS limit",
+            };
+
+            string origin = source switch
+            {
+                FramerateLimitSource.GameProfile => "this profile",
+                FramerateLimitSource.DefaultProfile => "default profile",
+                _ => powerProfile?.Name ?? "power profile",
+            };
+
+            return $"Currently: {effective} ({origin})";
+        }
+
+        private void RefreshFramerateOverrides()
+        {
+            OnPropertyChanged(nameof(FramerateModeOptions));
+            OnPropertyChanged(nameof(SelectedFramerateModeDC));
+            OnPropertyChanged(nameof(SelectedFramerateModeAC));
+            OnPropertyChanged(nameof(IsFramerateLimitDC));
+            OnPropertyChanged(nameof(IsFramerateLimitAC));
+            OnPropertyChanged(nameof(FramerateValueDC));
+            OnPropertyChanged(nameof(FramerateValueAC));
+            OnPropertyChanged(nameof(FramerateHintDC));
+            OnPropertyChanged(nameof(FramerateHintAC));
+        }
+        #endregion
+
         #region Process Control
         private ProcessExViewModel? _CurrentProcessViewModel;
         /// <summary>
@@ -2645,6 +2810,7 @@ namespace HandheldCompanion.ViewModels
                     SelectedProfile.PowerProfiles[(int)PowerLineStatus.Online] = powerProfile.Guid;
                     break;
             }
+            RefreshFramerateOverrides();
             UpdateProfile();
         }
 
@@ -3252,6 +3418,7 @@ namespace HandheldCompanion.ViewModels
 
                 UpdatePowerProfileSelections();
                 UpdateSelectedPowerProfileName();
+                RefreshFramerateOverrides();
                 UpdateControlsEnabledState();
                 NotifyWrapperProperties();
             }
