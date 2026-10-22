@@ -911,14 +911,38 @@
                                         SelectedValuePath="Mode" />
                                 </ui:SettingsCard>
 
-                                <ui:SettingsCard Header="FPS" Visibility="{Binding IsFramerateLimitAC, Mode=OneWay, UpdateSourceTrigger=PropertyChanged, Converter={StaticResource BooleanToVisibilityConverter}}">
-                                    <ui:NumberBox
-                                        MinWidth="100"
-                                        Maximum="{Binding FramerateOverrideMaximum, Mode=OneWay}"
-                                        Minimum="{Binding FramerateOverrideMinimum, Mode=OneWay}"
-                                        SmallChange="1"
-                                        SpinButtonPlacementMode="Compact"
-                                        Value="{Binding FramerateValueAC, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+                                <ui:SettingsCard Header="FPS" Visibility="{Binding IsFramerateOverrideAC, Mode=OneWay, UpdateSourceTrigger=PropertyChanged, Converter={StaticResource BooleanToVisibilityConverter}}">
+                                    <ComboBox
+                                        MinWidth="160"
+                                        ItemsSource="{Binding FramerateLimits, Mode=OneWay, UpdateSourceTrigger=PropertyChanged}"
+                                        SelectedItem="{Binding SelectedFrameLimitAC, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+                                </ui:SettingsCard>
+
+                                <ui:SettingsCard Visibility="{Binding IsFramerateCustomAC, Mode=OneWay, UpdateSourceTrigger=PropertyChanged, Converter={StaticResource BooleanToVisibilityConverter}}">
+                                    <DockPanel Width="{Binding ActualWidth, RelativeSource={RelativeSource Mode=FindAncestor, AncestorType=ui:SettingsCard}}">
+                                        <TextBox
+                                            Height="31"
+                                            HorizontalAlignment="Right"
+                                            VerticalAlignment="Center"
+                                            HorizontalContentAlignment="Center"
+                                            IsReadOnly="True"
+                                            Text="{Binding FramerateCustomValueAC, StringFormat={}{0:N0} FPS, UpdateSourceTrigger=PropertyChanged, Mode=OneWay}" />
+                                        <Slider
+                                            Margin="8,0,104,0"
+                                            HorizontalAlignment="Stretch"
+                                            VerticalAlignment="Center"
+                                            AutoToolTipPrecision="0"
+                                            IsMoveToPointEnabled="True"
+                                            IsSnapToTickEnabled="True"
+                                            LargeChange="10"
+                                            Maximum="{Binding FramerateCustomMaximum, Mode=OneWay, UpdateSourceTrigger=PropertyChanged}"
+                                            Minimum="{Binding FramerateCustomMinimum, Mode=OneWay}"
+                                            SmallChange="1"
+                                            TickFrequency="1"
+                                            TickPlacement="BottomRight"
+                                            ToolTip="{Binding Value, StringFormat=N0, RelativeSource={RelativeSource Self}, Mode=OneWay}"
+                                            Value="{Binding FramerateCustomValueAC, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+                                    </DockPanel>
                                 </ui:SettingsCard>
                             </ui:SettingsExpander.Items>
                         </ui:SettingsExpander>
@@ -970,14 +994,38 @@
                                         SelectedValuePath="Mode" />
                                 </ui:SettingsCard>
 
-                                <ui:SettingsCard Header="FPS" Visibility="{Binding IsFramerateLimitDC, Mode=OneWay, UpdateSourceTrigger=PropertyChanged, Converter={StaticResource BooleanToVisibilityConverter}}">
-                                    <ui:NumberBox
-                                        MinWidth="100"
-                                        Maximum="{Binding FramerateOverrideMaximum, Mode=OneWay}"
-                                        Minimum="{Binding FramerateOverrideMinimum, Mode=OneWay}"
-                                        SmallChange="1"
-                                        SpinButtonPlacementMode="Compact"
-                                        Value="{Binding FramerateValueDC, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+                                <ui:SettingsCard Header="FPS" Visibility="{Binding IsFramerateOverrideDC, Mode=OneWay, UpdateSourceTrigger=PropertyChanged, Converter={StaticResource BooleanToVisibilityConverter}}">
+                                    <ComboBox
+                                        MinWidth="160"
+                                        ItemsSource="{Binding FramerateLimits, Mode=OneWay, UpdateSourceTrigger=PropertyChanged}"
+                                        SelectedItem="{Binding SelectedFrameLimitDC, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+                                </ui:SettingsCard>
+
+                                <ui:SettingsCard Visibility="{Binding IsFramerateCustomDC, Mode=OneWay, UpdateSourceTrigger=PropertyChanged, Converter={StaticResource BooleanToVisibilityConverter}}">
+                                    <DockPanel Width="{Binding ActualWidth, RelativeSource={RelativeSource Mode=FindAncestor, AncestorType=ui:SettingsCard}}">
+                                        <TextBox
+                                            Height="31"
+                                            HorizontalAlignment="Right"
+                                            VerticalAlignment="Center"
+                                            HorizontalContentAlignment="Center"
+                                            IsReadOnly="True"
+                                            Text="{Binding FramerateCustomValueDC, StringFormat={}{0:N0} FPS, UpdateSourceTrigger=PropertyChanged, Mode=OneWay}" />
+                                        <Slider
+                                            Margin="8,0,104,0"
+                                            HorizontalAlignment="Stretch"
+                                            VerticalAlignment="Center"
+                                            AutoToolTipPrecision="0"
+                                            IsMoveToPointEnabled="True"
+                                            IsSnapToTickEnabled="True"
+                                            LargeChange="10"
+                                            Maximum="{Binding FramerateCustomMaximum, Mode=OneWay, UpdateSourceTrigger=PropertyChanged}"
+                                            Minimum="{Binding FramerateCustomMinimum, Mode=OneWay}"
+                                            SmallChange="1"
+                                            TickFrequency="1"
+                                            TickPlacement="BottomRight"
+                                            ToolTip="{Binding Value, StringFormat=N0, RelativeSource={RelativeSource Self}, Mode=OneWay}"
+                                            Value="{Binding FramerateCustomValueDC, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+                                    </DockPanel>
                                 </ui:SettingsCard>
                             </ui:SettingsExpander.Items>
                         </ui:SettingsExpander>

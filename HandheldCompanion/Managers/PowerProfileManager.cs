@@ -453,8 +453,8 @@ namespace HandheldCompanion.Managers
 
         /// <summary>
         /// Resolves the framerate limit for a game profile and power state.
-        /// The first layer that is not Inherit wins: game profile, default game profile, power profile.
-        /// Inherit on the power profile means RTSS keeps its own limit.
+        /// The first layer set to Override wins: game profile, default game profile, power profile.
+        /// An Override value of 0 removes the limit. Inherit on every layer means RTSS keeps its own limit.
         /// </summary>
         public (FramerateLimitMode Mode, int Value, FramerateLimitSource Source) ResolveFramerateLimit(Profile? gameProfile, int powerLineStatus, PowerProfile? powerProfile)
         {
@@ -471,14 +471,18 @@ namespace HandheldCompanion.Managers
 
                 if (layer.PerformanceOverrides.TryGetValue(powerLineStatus, out PerformanceOverrides? overrides)
                     && overrides is not null
-                    && overrides.FramerateMode != FramerateLimitMode.Inherit)
-                    return (overrides.FramerateMode, overrides.FramerateValue, source);
+                    && overrides.FramerateMode.Normalize() == FramerateLimitMode.Override)
+                {
+                    int value = overrides.FramerateMode.IsLegacyNoLimit() ? 0 : Math.Max(0, overrides.FramerateValue);
+                    return (FramerateLimitMode.Override, value, source);
+                }
             }
 
             if (powerProfile is null)
                 return (FramerateLimitMode.Inherit, 0, FramerateLimitSource.PowerProfile);
 
-            return (powerProfile.GetFramerateMode(), powerProfile.FramerateValue, FramerateLimitSource.PowerProfile);
+            FramerateLimitMode powerMode = powerProfile.GetFramerateMode();
+            return (powerMode, powerMode == FramerateLimitMode.Override ? Math.Max(0, powerProfile.FramerateValue) : 0, FramerateLimitSource.PowerProfile);
         }
 
         /// <summary>
@@ -496,8 +500,8 @@ namespace HandheldCompanion.Managers
             }
 
             (FramerateLimitMode mode, int value, _) = ResolveFramerateLimit(gameProfile, powerLineStatus, GetCurrent());
-            framerate = mode == FramerateLimitMode.Limit ? value : 0;
-            return mode != FramerateLimitMode.Inherit;
+            framerate = mode == FramerateLimitMode.Override ? value : 0;
+            return mode == FramerateLimitMode.Override;
         }
 
         public void SetStreamingPowerOverride(bool enabled)

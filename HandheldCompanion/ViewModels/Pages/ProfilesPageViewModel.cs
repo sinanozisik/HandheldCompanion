@@ -1661,22 +1661,34 @@ namespace HandheldCompanion.ViewModels
         private static readonly IReadOnlyList<FramerateModeOption> GameFramerateModeOptions =
         [
             new(FramerateLimitMode.Inherit, "Use default profile"),
-            new(FramerateLimitMode.NoLimit, "No limit"),
-            new(FramerateLimitMode.Limit, "Limit"),
+            new(FramerateLimitMode.Override, "Override"),
         ];
 
         private static readonly IReadOnlyList<FramerateModeOption> DefaultFramerateModeOptions =
         [
             new(FramerateLimitMode.Inherit, "Use power profile"),
-            new(FramerateLimitMode.NoLimit, "No limit"),
-            new(FramerateLimitMode.Limit, "Limit"),
+            new(FramerateLimitMode.Override, "Override"),
         ];
 
         public IReadOnlyList<FramerateModeOption> FramerateModeOptions =>
             SelectedProfile?.Default == true ? DefaultFramerateModeOptions : GameFramerateModeOptions;
 
-        public int FramerateOverrideMinimum => 10;
-        public int FramerateOverrideMaximum => 500;
+        // same choices as the power profile page: screen presets with Disabled (0) first, then Custom
+        private IReadOnlyList<ScreenFramelimitViewModel> _framerateLimits = ScreenFramelimitViewModel.BuildList(null);
+        public IReadOnlyList<ScreenFramelimitViewModel> FramerateLimits => _framerateLimits;
+
+        public int FramerateCustomMinimum => ScreenFramelimitViewModel.CustomMinimum;
+        public int FramerateCustomMaximum
+        {
+            get
+            {
+                DesktopScreen? desktopScreen = ManagerFactory.multimediaManager.PrimaryDesktop;
+                return Math.Max(FramerateCustomMinimum, desktopScreen?.GetMaximumFrequency() ?? 60);
+            }
+        }
+
+        // Custom was picked for a slot, its value may still match a preset
+        private readonly bool[] _framerateCustomSelected = new bool[2];
 
         // bound through SelectedValue so the selection survives the options list being swapped
         // (game profile vs default profile labels); a missing entry reads as Inherit
@@ -1692,19 +1704,34 @@ namespace HandheldCompanion.ViewModels
             set => SetFramerateMode(FramerateSlotAC, value);
         }
 
-        public bool IsFramerateLimitDC => GetFramerateMode(FramerateSlotDC) == FramerateLimitMode.Limit;
-        public bool IsFramerateLimitAC => GetFramerateMode(FramerateSlotAC) == FramerateLimitMode.Limit;
+        public bool IsFramerateOverrideDC => GetFramerateMode(FramerateSlotDC) == FramerateLimitMode.Override;
+        public bool IsFramerateOverrideAC => GetFramerateMode(FramerateSlotAC) == FramerateLimitMode.Override;
 
-        public double FramerateValueDC
+        public ScreenFramelimitViewModel? SelectedFrameLimitDC
         {
-            get => GetPerformanceOverrides(FramerateSlotDC, false)?.FramerateValue ?? 60;
-            set => SetFramerateValue(FramerateSlotDC, value);
+            get => GetSelectedFrameLimit(FramerateSlotDC);
+            set => SetSelectedFrameLimit(FramerateSlotDC, value);
         }
 
-        public double FramerateValueAC
+        public ScreenFramelimitViewModel? SelectedFrameLimitAC
         {
-            get => GetPerformanceOverrides(FramerateSlotAC, false)?.FramerateValue ?? 60;
-            set => SetFramerateValue(FramerateSlotAC, value);
+            get => GetSelectedFrameLimit(FramerateSlotAC);
+            set => SetSelectedFrameLimit(FramerateSlotAC, value);
+        }
+
+        public bool IsFramerateCustomDC => IsFramerateOverrideDC && IsCustomFrameLimit(FramerateSlotDC);
+        public bool IsFramerateCustomAC => IsFramerateOverrideAC && IsCustomFrameLimit(FramerateSlotAC);
+
+        public double FramerateCustomValueDC
+        {
+            get => GetCustomFramerate(FramerateSlotDC);
+            set => SetCustomFramerate(FramerateSlotDC, value);
+        }
+
+        public double FramerateCustomValueAC
+        {
+            get => GetCustomFramerate(FramerateSlotAC);
+            set => SetCustomFramerate(FramerateSlotAC, value);
         }
 
         public string FramerateHintDC => GetFramerateHint(FramerateSlotDC);
@@ -1730,7 +1757,12 @@ namespace HandheldCompanion.ViewModels
 
         private FramerateLimitMode GetFramerateMode(int slot)
         {
-            return GetPerformanceOverrides(slot, false)?.FramerateMode ?? FramerateLimitMode.Inherit;
+            return (GetPerformanceOverrides(slot, false)?.FramerateMode ?? FramerateLimitMode.Inherit).Normalize();
+        }
+
+        private int GetFramerateValue(int slot)
+        {
+            return Math.Max(0, GetPerformanceOverrides(slot, false)?.FramerateValue ?? 0);
         }
 
         private PowerProfile? GetSlotPowerProfile(int slot)
@@ -1743,17 +1775,21 @@ namespace HandheldCompanion.ViewModels
 
         private void SetFramerateMode(int slot, FramerateLimitMode mode)
         {
+            mode = mode.Normalize();
+
             PerformanceOverrides? overrides = GetPerformanceOverrides(slot, true);
             if (overrides is null || overrides.FramerateMode == mode)
                 return;
 
-            // start a new limit from the value that currently applies
-            if (mode == FramerateLimitMode.Limit && overrides.FramerateValue <= 0)
+            // without a value of its own, start from the limit that applies right now (0 = Disabled);
+            // when RTSS keeps its own limit there is nothing to copy and the stored value is kept
+            if (mode == FramerateLimitMode.Override && overrides.FramerateValue <= 0)
             {
                 (FramerateLimitMode currentMode, int currentValue, _) = ManagerFactory.powerProfileManager.ResolveFramerateLimit(SelectedProfile, slot, GetSlotPowerProfile(slot));
-                overrides.FramerateValue = currentMode == FramerateLimitMode.Limit && currentValue > 0 ? currentValue : 60;
+                overrides.FramerateValue = currentMode == FramerateLimitMode.Override ? currentValue : 0;
             }
 
+            _framerateCustomSelected[slot] = false;
             overrides.FramerateMode = mode;
             RefreshFramerateOverrides();
 
@@ -1761,24 +1797,90 @@ namespace HandheldCompanion.ViewModels
                 UpdateProfile();
         }
 
-        private void SetFramerateValue(int slot, double value)
+        private bool IsCustomFrameLimit(int slot)
         {
-            if (double.IsNaN(value))
+            if (_framerateCustomSelected[slot])
+                return true;
+
+            int value = GetFramerateValue(slot);
+            return !_framerateLimits.Any(vm => !vm.IsCustom && vm.FrameLimit.limit == value);
+        }
+
+        private ScreenFramelimitViewModel? GetSelectedFrameLimit(int slot)
+        {
+            if (IsCustomFrameLimit(slot))
+                return _framerateLimits.FirstOrDefault(vm => vm.IsCustom);
+
+            int value = GetFramerateValue(slot);
+            return _framerateLimits.FirstOrDefault(vm => !vm.IsCustom && vm.FrameLimit.limit == value);
+        }
+
+        private void SetSelectedFrameLimit(int slot, ScreenFramelimitViewModel? frameLimit)
+        {
+            if (frameLimit is null || SelectedProfile is null)
                 return;
 
+            if (frameLimit.IsCustom)
+            {
+                if (_framerateCustomSelected[slot])
+                    return;
+
+                _framerateCustomSelected[slot] = true;
+
+                // a custom limit is never 0, coming from Disabled it starts at the refresh rate
+                int value = GetFramerateValue(slot);
+                WriteFramerateValue(slot, value > 0 ? value : FramerateCustomMaximum);
+                return;
+            }
+
+            _framerateCustomSelected[slot] = false;
+            WriteFramerateValue(slot, frameLimit.FrameLimit.limit);
+        }
+
+        private double GetCustomFramerate(int slot)
+        {
+            int value = GetFramerateValue(slot);
+            if (value <= 0)
+                return FramerateCustomMaximum;
+
+            return Math.Clamp(value, FramerateCustomMinimum, FramerateCustomMaximum);
+        }
+
+        private void SetCustomFramerate(int slot, double value)
+        {
+            if (double.IsNaN(value) || !IsCustomFrameLimit(slot))
+                return;
+
+            int framerate = Math.Clamp((int)Math.Round(value), FramerateCustomMinimum, FramerateCustomMaximum);
+            _framerateCustomSelected[slot] = true;
+            WriteFramerateValue(slot, framerate);
+        }
+
+        private void WriteFramerateValue(int slot, int framerate)
+        {
             PerformanceOverrides? overrides = GetPerformanceOverrides(slot, true);
             if (overrides is null)
                 return;
 
-            int framerate = Math.Clamp((int)Math.Round(value), FramerateOverrideMinimum, FramerateOverrideMaximum);
-            if (overrides.FramerateValue == framerate)
-                return;
-
+            bool changed = overrides.FramerateValue != framerate;
             overrides.FramerateValue = framerate;
             RefreshFramerateOverrides();
 
-            if (!isLoadingProfile)
+            if (changed && !isLoadingProfile)
                 UpdateProfile();
+        }
+
+        private void UpdateFramerateLimits(DesktopScreen? screen)
+        {
+            _framerateLimits = ScreenFramelimitViewModel.BuildList(screen);
+            OnPropertyChanged(nameof(FramerateLimits));
+            OnPropertyChanged(nameof(FramerateCustomMaximum));
+            RefreshFramerateOverrides();
+        }
+
+        private void MultimediaManager_PrimaryScreenChanged(DesktopScreen? screen)
+        {
+            UpdateFramerateLimits(screen);
         }
 
         private string GetFramerateHint(int slot)
@@ -1789,12 +1891,9 @@ namespace HandheldCompanion.ViewModels
             PowerProfile? powerProfile = GetSlotPowerProfile(slot);
             (FramerateLimitMode mode, int value, FramerateLimitSource source) = ManagerFactory.powerProfileManager.ResolveFramerateLimit(SelectedProfile, slot, powerProfile);
 
-            string effective = mode switch
-            {
-                FramerateLimitMode.Limit => $"{value} FPS",
-                FramerateLimitMode.NoLimit => "No limit",
-                _ => "RTSS limit",
-            };
+            string effective = mode != FramerateLimitMode.Override
+                ? "RTSS limit"
+                : value > 0 ? $"{value} FPS" : "No limit";
 
             string origin = source switch
             {
@@ -1817,10 +1916,14 @@ namespace HandheldCompanion.ViewModels
             OnPropertyChanged(nameof(FramerateModeOptions));
             OnPropertyChanged(nameof(FramerateModeDC));
             OnPropertyChanged(nameof(FramerateModeAC));
-            OnPropertyChanged(nameof(IsFramerateLimitDC));
-            OnPropertyChanged(nameof(IsFramerateLimitAC));
-            OnPropertyChanged(nameof(FramerateValueDC));
-            OnPropertyChanged(nameof(FramerateValueAC));
+            OnPropertyChanged(nameof(IsFramerateOverrideDC));
+            OnPropertyChanged(nameof(IsFramerateOverrideAC));
+            OnPropertyChanged(nameof(SelectedFrameLimitDC));
+            OnPropertyChanged(nameof(SelectedFrameLimitAC));
+            OnPropertyChanged(nameof(IsFramerateCustomDC));
+            OnPropertyChanged(nameof(IsFramerateCustomAC));
+            OnPropertyChanged(nameof(FramerateCustomValueDC));
+            OnPropertyChanged(nameof(FramerateCustomValueAC));
             OnPropertyChanged(nameof(FramerateHintDC));
             OnPropertyChanged(nameof(FramerateHintAC));
         }
@@ -2827,6 +2930,10 @@ namespace HandheldCompanion.ViewModels
 
         private void MultimediaManager_Initialized()
         {
+            ManagerFactory.multimediaManager.PrimaryScreenChanged -= MultimediaManager_PrimaryScreenChanged;
+            ManagerFactory.multimediaManager.PrimaryScreenChanged += MultimediaManager_PrimaryScreenChanged;
+            UpdateFramerateLimits(ManagerFactory.multimediaManager.PrimaryDesktop);
+
             try
             {
                 DesktopScreen? desktopScreen = ManagerFactory.multimediaManager.PrimaryDesktop;
@@ -3435,6 +3542,7 @@ namespace HandheldCompanion.ViewModels
                 UpdateSelectedPowerProfileName();
                 GetPerformanceOverrides(FramerateSlotDC, true);
                 GetPerformanceOverrides(FramerateSlotAC, true);
+                Array.Clear(_framerateCustomSelected);
                 RefreshFramerateOverrides();
                 UpdateControlsEnabledState();
                 NotifyWrapperProperties();
@@ -3934,6 +4042,7 @@ namespace HandheldCompanion.ViewModels
                 }
 
                 ManagerFactory.multimediaManager.Initialized -= MultimediaManager_Initialized;
+                ManagerFactory.multimediaManager.PrimaryScreenChanged -= MultimediaManager_PrimaryScreenChanged;
                 ManagerFactory.gpuManager.Initialized -= GpuManager_Initialized;
                 ManagerFactory.gpuManager.Hooked -= GPUManager_Hooked;
                 ManagerFactory.gpuManager.Unhooked -= GPUManager_Unhooked;

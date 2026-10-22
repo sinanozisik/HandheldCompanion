@@ -238,7 +238,8 @@ public partial class Profile : ICloneable, IComparable, INotifyPropertyChanged
         { 1 /*PowerLineStatus.Online*/, Guid.Empty },
     };
 
-    // Optional per power-state overrides, same keys as PowerProfiles. Inherit means the next layer decides.
+    // Optional per power-state overrides, same keys as PowerProfiles.
+    // Inherit means the next layer decides, Override applies this profile's own value. A missing entry reads as Inherit.
     public Dictionary<int, PerformanceOverrides> PerformanceOverrides { get; set; } = new()
     {
         { 0 /*PowerLineStatus.Offline*/, new() },
