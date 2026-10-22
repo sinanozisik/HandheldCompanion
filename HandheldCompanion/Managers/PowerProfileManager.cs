@@ -18,6 +18,8 @@ namespace HandheldCompanion.Managers
     {
         private object profileLock = new();
         private PowerProfile? currentProfile;
+        private Profile? currentGameProfile;
+        private int currentPowerLineStatus;
         private bool streamingPowerOverride;
 
         public ConcurrentDictionary<Guid, PowerProfile> profiles = [];
@@ -253,6 +255,8 @@ namespace HandheldCompanion.Managers
 
                 // update current profile
                 currentProfile = powerProfile;
+                currentGameProfile = profile;
+                currentPowerLineStatus = powerLineStatus;
 
                 // apply device-specific power profile behavior before other subscribers
                 IDevice.GetCurrent().PowerProfileManager_Applied(powerProfile, source);
@@ -445,6 +449,39 @@ namespace HandheldCompanion.Managers
             {
                 Monitor.Exit(profileLock);
             }
+        }
+
+        /// <summary>
+        /// Resolves the framerate limit for the current game profile and power state.
+        /// Order: game profile override, default game profile override, current power profile.
+        /// Returns false when nothing should be applied (power profile limiter disabled, legacy behavior).
+        /// </summary>
+        public bool GetFramerateLimit(out int framerate)
+        {
+            Profile? gameProfile;
+            int powerLineStatus;
+            lock (profileLock)
+            {
+                gameProfile = currentGameProfile;
+                powerLineStatus = currentPowerLineStatus;
+            }
+
+            foreach (Profile? layer in new[] { gameProfile, ManagerFactory.profileManager.GetDefault() })
+            {
+                if (layer?.PerformanceOverrides is null)
+                    continue;
+
+                if (layer.PerformanceOverrides.TryGetValue(powerLineStatus, out PerformanceOverrides? overrides) && overrides is not null && overrides.HasFramerateOverride)
+                {
+                    // an explicit "no limit" override clears the limiter
+                    framerate = overrides.FramerateLimitEnabled == true ? overrides.FramerateValue : 0;
+                    return true;
+                }
+            }
+
+            PowerProfile powerProfile = GetCurrent();
+            framerate = powerProfile.FramerateValue;
+            return powerProfile.FramerateLimitEnabled ?? powerProfile.FramerateValue != 0;
         }
 
         public void SetStreamingPowerOverride(bool enabled)

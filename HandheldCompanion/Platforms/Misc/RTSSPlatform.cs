@@ -177,8 +177,8 @@ public class RTSSPlatform : IPlatform
 
     private void PowerProfileManager_Applied(PowerProfile powerProfile, UpdateSource source)
     {
-        if (powerProfile.FramerateLimitEnabled ?? powerProfile.FramerateValue != 0)
-            SetTargetFPS(powerProfile.FramerateValue);
+        if (ManagerFactory.powerProfileManager.GetFramerateLimit(out int framerate))
+            SetTargetFPS(framerate);
     }
 
     private void ProcessManager_ForegroundChanged(ProcessEx? processEx, ProcessEx? backgroundEx, ProcessFilter filter)
@@ -261,10 +261,8 @@ public class RTSSPlatform : IPlatform
     {
         lock (updateLock)
         {
-            PowerProfile currentPowerProfile = ManagerFactory.powerProfileManager.GetCurrent();
-            if (currentPowerProfile.FramerateLimitEnabled ?? currentPowerProfile.FramerateValue != 0)
+            if (ManagerFactory.powerProfileManager.GetFramerateLimit(out int RequestedFramerate))
             {
-                int RequestedFramerate = currentPowerProfile.FramerateValue;
                 if (GetTargetFPS() != RequestedFramerate)
                     SetTargetFPS(RequestedFramerate);
             }
