@@ -53,6 +53,11 @@ namespace HandheldCompanion.ViewModels
         }
     }
 
+    public sealed record FramerateModeOption(FramerateLimitMode Mode, string Label)
+    {
+        public override string ToString() => Label;
+    }
+
     public class PerformancePageViewModel : BaseViewModel
     {
         public ObservableCollection<ScreenFramelimitViewModel> FramerateLimits { get; } = [];
@@ -68,9 +73,14 @@ namespace HandheldCompanion.ViewModels
                     // update variable
                     _selectedPreset = value;
 
+                    // lazy migration: pin the legacy framerate behavior, persisted on the next save
+                    if (_selectedPreset is not null && _selectedPreset.FramerateMode is null)
+                        _selectedPreset.SetFramerateMode(_selectedPreset.GetFramerateMode());
+
+                    _customFrameLimitValue = null;
                     IsCustomFrameLimitSelected = ShouldUseCustomFrameLimit(_selectedPreset.FramerateValue);
                     if (IsCustomFrameLimitSelected)
-                        _customFrameLimitValue = Math.Clamp(_selectedPreset.FramerateValue, 0, FrameLimitMaximum);
+                        _customFrameLimitValue = ClampCustomFrameLimit(_selectedPreset.FramerateValue);
 
                     // page-specific behaviors
                     switch (IsQuickTools)
@@ -400,21 +410,39 @@ namespace HandheldCompanion.ViewModels
             }
         }
 
-        public int FrameLimitMinimum => 10;
+        public int FrameLimitMinimum => ScreenFramelimitViewModel.CustomMinimum;
 
-        public bool FramerateLimitEnabled
+        private int ClampCustomFrameLimit(int value)
         {
-            get => SelectedPreset.FramerateLimitEnabled ?? SelectedPreset.FramerateValue != 0;
+            // coming from Disabled (0), start the custom limit at the refresh rate
+            if (value <= 0)
+                return FrameLimitMaximum;
+
+            return Math.Clamp(value, FrameLimitMinimum, Math.Max(FrameLimitMinimum, FrameLimitMaximum));
+        }
+
+        public IReadOnlyList<FramerateModeOption> FramerateModeOptions { get; } =
+        [
+            new(FramerateLimitMode.Inherit, "Use RTSS limit"),
+            new(FramerateLimitMode.Override, "Override"),
+        ];
+
+        public FramerateModeOption? SelectedFramerateMode
+        {
+            get => SelectedPreset is null ? null : FramerateModeOptions.FirstOrDefault(o => o.Mode == SelectedPreset.GetFramerateMode());
             set
             {
-                if (value == FramerateLimitEnabled)
+                if (value is null || SelectedPreset is null || value.Mode == SelectedPreset.GetFramerateMode())
                     return;
 
-                SelectedPreset.FramerateLimitEnabled = value;
+                SelectedPreset.SetFramerateMode(value.Mode);
+                OnPropertyChanged(nameof(SelectedFramerateMode));
                 OnPropertyChanged(nameof(FramerateLimitEnabled));
                 SubmitSelectedPreset();
             }
         }
+
+        public bool FramerateLimitEnabled => SelectedPreset?.GetFramerateMode() == FramerateLimitMode.Override;
 
         private bool _isCustomFrameLimitSelected;
         public bool IsCustomFrameLimitSelected
@@ -439,16 +467,16 @@ namespace HandheldCompanion.ViewModels
                     return _customFrameLimitValue.Value;
 
                 if (SelectedPreset is null)
-                    return 0;
+                    return FrameLimitMinimum;
 
-                return Math.Clamp(SelectedPreset.FramerateValue, 0, FrameLimitMaximum);
+                return ClampCustomFrameLimit(SelectedPreset.FramerateValue);
             }
             set
             {
                 if (SelectedPreset is null)
                     return;
 
-                int clamped = Math.Clamp(value, 0, FrameLimitMaximum);
+                int clamped = ClampCustomFrameLimit(value);
                 bool customValueChanged = _customFrameLimitValue != clamped;
                 bool selectionChanged = !IsCustomFrameLimitSelected;
                 bool presetChanged = SelectedPreset.FramerateValue != clamped;
@@ -506,7 +534,7 @@ namespace HandheldCompanion.ViewModels
                 {
                     int customValue = _customFrameLimitValue.HasValue
                         ? _customFrameLimitValue.Value
-                        : Math.Clamp(SelectedPreset.FramerateValue, 0, FrameLimitMaximum);
+                        : ClampCustomFrameLimit(SelectedPreset.FramerateValue);
 
                     if (!_customFrameLimitValue.HasValue)
                     {
@@ -915,6 +943,7 @@ namespace HandheldCompanion.ViewModels
             // Framerate limiter UI state
             nameof(FramerateLimits),
             nameof(FramerateLimitEnabled),
+            nameof(SelectedFramerateMode),
             nameof(SelectedFrameLimit),
             nameof(IsCustomFrameLimitSelected),
             nameof(CustomFrameLimitValue),
@@ -1454,13 +1483,8 @@ namespace HandheldCompanion.ViewModels
             {
                 FramerateLimits.Clear();
 
-                if (screen is not null)
-                {
-                    foreach (ScreenFramelimit frameLimit in screen.GetFramelimits())
-                        FramerateLimits.Add(new ScreenFramelimitViewModel(frameLimit));
-                }
-
-                FramerateLimits.Add(new ScreenFramelimitViewModel(new ScreenFramelimit(-1, 0), Resources.Enum_InputsHotkeyType_Custom, true));
+                foreach (ScreenFramelimitViewModel frameLimit in ScreenFramelimitViewModel.BuildList(screen))
+                    FramerateLimits.Add(frameLimit);
             }
             finally
             {
@@ -1468,7 +1492,7 @@ namespace HandheldCompanion.ViewModels
             }
 
             if (SelectedPreset is not null && ShouldUseCustomFrameLimit(SelectedPreset.FramerateValue))
-                _customFrameLimitValue = Math.Clamp(SelectedPreset.FramerateValue, 0, FrameLimitMaximum);
+                _customFrameLimitValue = ClampCustomFrameLimit(SelectedPreset.FramerateValue);
 
             OnPropertyChanged(nameof(FramerateLimits));
             OnPropertyChanged(nameof(IsCustomFrameLimitSelected));
@@ -1507,7 +1531,7 @@ namespace HandheldCompanion.ViewModels
 
             // Update all properties
             if (ShouldUseCustomFrameLimit(preset.FramerateValue))
-                _customFrameLimitValue = Math.Clamp(preset.FramerateValue, 0, FrameLimitMaximum);
+                _customFrameLimitValue = ClampCustomFrameLimit(preset.FramerateValue);
 
             OnPropertyChanged(string.Empty);
 

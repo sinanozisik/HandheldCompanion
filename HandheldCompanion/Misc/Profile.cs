@@ -231,10 +231,19 @@ public partial class Profile : ICloneable, IComparable, INotifyPropertyChanged
     public ButtonState AimingSightsTrigger { get; set; } = new();
 
     // power & graphics
+    // Power profile selected for each power state (key: PowerLineStatus, 0 = on battery, 1 = plugged in).
     public Dictionary<int, Guid> PowerProfiles { get; set; } = new()
     {
         { 0 /*PowerLineStatus.Offline*/, Guid.Empty },
         { 1 /*PowerLineStatus.Online*/, Guid.Empty },
+    };
+
+    // Optional per power-state overrides, same keys as PowerProfiles.
+    // Inherit means the next layer decides, Override applies this profile's own value. A missing entry reads as Inherit.
+    public Dictionary<int, PerformanceOverrides> PerformanceOverrides { get; set; } = new()
+    {
+        { 0 /*PowerLineStatus.Offline*/, new() },
+        { 1 /*PowerLineStatus.Online*/, new() },
     };
 
     public bool GPUScaling { get; set; }

@@ -18,6 +18,8 @@ namespace HandheldCompanion.Managers
     {
         private object profileLock = new();
         private PowerProfile? currentProfile;
+        private Profile? currentGameProfile;
+        private int currentPowerLineStatus;
         private bool streamingPowerOverride;
 
         public ConcurrentDictionary<Guid, PowerProfile> profiles = [];
@@ -253,6 +255,8 @@ namespace HandheldCompanion.Managers
 
                 // update current profile
                 currentProfile = powerProfile;
+                currentGameProfile = profile;
+                currentPowerLineStatus = powerLineStatus;
 
                 // apply device-specific power profile behavior before other subscribers
                 IDevice.GetCurrent().PowerProfileManager_Applied(powerProfile, source);
@@ -445,6 +449,59 @@ namespace HandheldCompanion.Managers
             {
                 Monitor.Exit(profileLock);
             }
+        }
+
+        /// <summary>
+        /// Resolves the framerate limit for a game profile and power state.
+        /// The first layer set to Override wins: game profile, default game profile, power profile.
+        /// An Override value of 0 removes the limit. Inherit on every layer means RTSS keeps its own limit.
+        /// </summary>
+        public (FramerateLimitMode Mode, int Value, FramerateLimitSource Source) ResolveFramerateLimit(Profile? gameProfile, int powerLineStatus, PowerProfile? powerProfile)
+        {
+            (Profile? Layer, FramerateLimitSource Source)[] layers =
+            [
+                (gameProfile, FramerateLimitSource.GameProfile),
+                (ManagerFactory.profileManager.GetDefault(), FramerateLimitSource.DefaultProfile),
+            ];
+
+            foreach ((Profile? layer, FramerateLimitSource source) in layers)
+            {
+                if (layer?.PerformanceOverrides is null)
+                    continue;
+
+                if (layer.PerformanceOverrides.TryGetValue(powerLineStatus, out PerformanceOverrides? overrides)
+                    && overrides is not null
+                    && overrides.FramerateMode.Normalize() == FramerateLimitMode.Override)
+                {
+                    int value = overrides.FramerateMode.IsLegacyNoLimit() ? 0 : Math.Max(0, overrides.FramerateValue);
+                    return (FramerateLimitMode.Override, value, source);
+                }
+            }
+
+            if (powerProfile is null)
+                return (FramerateLimitMode.Inherit, 0, FramerateLimitSource.PowerProfile);
+
+            FramerateLimitMode powerMode = powerProfile.GetFramerateMode();
+            return (powerMode, powerMode == FramerateLimitMode.Override ? Math.Max(0, powerProfile.FramerateValue) : 0, FramerateLimitSource.PowerProfile);
+        }
+
+        /// <summary>
+        /// Resolves the framerate limit for the current game profile and power state.
+        /// Returns false when RTSS should keep its own limit.
+        /// </summary>
+        public bool GetFramerateLimit(out int framerate)
+        {
+            Profile? gameProfile;
+            int powerLineStatus;
+            lock (profileLock)
+            {
+                gameProfile = currentGameProfile;
+                powerLineStatus = currentPowerLineStatus;
+            }
+
+            (FramerateLimitMode mode, int value, _) = ResolveFramerateLimit(gameProfile, powerLineStatus, GetCurrent());
+            framerate = mode == FramerateLimitMode.Override ? value : 0;
+            return mode == FramerateLimitMode.Override;
         }
 
         public void SetStreamingPowerOverride(bool enabled)
