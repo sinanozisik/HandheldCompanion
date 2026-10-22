@@ -903,20 +903,20 @@
                                 </ui:SettingsCard>
 
                                 <ui:SettingsCard Description="{Binding FramerateHintAC, Mode=OneWay, UpdateSourceTrigger=PropertyChanged}" Header="Framerate limit">
-                                    <ikw:SimpleStackPanel Orientation="Horizontal" Spacing="6">
-                                        <ui:NumberBox
-                                            MinWidth="100"
-                                            Maximum="{Binding FramerateOverrideMaximum, Mode=OneWay}"
-                                            Minimum="{Binding FramerateOverrideMinimum, Mode=OneWay}"
-                                            SmallChange="1"
-                                            SpinButtonPlacementMode="Compact"
-                                            Value="{Binding FramerateValueAC, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
-                                            Visibility="{Binding IsFramerateLimitAC, Mode=OneWay, UpdateSourceTrigger=PropertyChanged, Converter={StaticResource BooleanToVisibilityConverter}}" />
-                                        <ComboBox
-                                            MinWidth="160"
-                                            ItemsSource="{Binding FramerateModeOptions, Mode=OneWay, UpdateSourceTrigger=PropertyChanged}"
-                                            SelectedItem="{Binding SelectedFramerateModeAC, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
-                                    </ikw:SimpleStackPanel>
+                                    <ComboBox
+                                        MinWidth="160"
+                                        ItemsSource="{Binding FramerateModeOptions, Mode=OneWay, UpdateSourceTrigger=PropertyChanged}"
+                                        SelectedItem="{Binding SelectedFramerateModeAC, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+                                </ui:SettingsCard>
+
+                                <ui:SettingsCard Header="FPS" Visibility="{Binding IsFramerateLimitAC, Mode=OneWay, UpdateSourceTrigger=PropertyChanged, Converter={StaticResource BooleanToVisibilityConverter}}">
+                                    <ui:NumberBox
+                                        MinWidth="100"
+                                        Maximum="{Binding FramerateOverrideMaximum, Mode=OneWay}"
+                                        Minimum="{Binding FramerateOverrideMinimum, Mode=OneWay}"
+                                        SmallChange="1"
+                                        SpinButtonPlacementMode="Compact"
+                                        Value="{Binding FramerateValueAC, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
                                 </ui:SettingsCard>
                             </ui:SettingsExpander.Items>
                         </ui:SettingsExpander>
@@ -960,20 +960,20 @@
                                 </ui:SettingsCard>
 
                                 <ui:SettingsCard Description="{Binding FramerateHintDC, Mode=OneWay, UpdateSourceTrigger=PropertyChanged}" Header="Framerate limit">
-                                    <ikw:SimpleStackPanel Orientation="Horizontal" Spacing="6">
-                                        <ui:NumberBox
-                                            MinWidth="100"
-                                            Maximum="{Binding FramerateOverrideMaximum, Mode=OneWay}"
-                                            Minimum="{Binding FramerateOverrideMinimum, Mode=OneWay}"
-                                            SmallChange="1"
-                                            SpinButtonPlacementMode="Compact"
-                                            Value="{Binding FramerateValueDC, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
-                                            Visibility="{Binding IsFramerateLimitDC, Mode=OneWay, UpdateSourceTrigger=PropertyChanged, Converter={StaticResource BooleanToVisibilityConverter}}" />
-                                        <ComboBox
-                                            MinWidth="160"
-                                            ItemsSource="{Binding FramerateModeOptions, Mode=OneWay, UpdateSourceTrigger=PropertyChanged}"
-                                            SelectedItem="{Binding SelectedFramerateModeDC, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
-                                    </ikw:SimpleStackPanel>
+                                    <ComboBox
+                                        MinWidth="160"
+                                        ItemsSource="{Binding FramerateModeOptions, Mode=OneWay, UpdateSourceTrigger=PropertyChanged}"
+                                        SelectedItem="{Binding SelectedFramerateModeDC, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+                                </ui:SettingsCard>
+
+                                <ui:SettingsCard Header="FPS" Visibility="{Binding IsFramerateLimitDC, Mode=OneWay, UpdateSourceTrigger=PropertyChanged, Converter={StaticResource BooleanToVisibilityConverter}}">
+                                    <ui:NumberBox
+                                        MinWidth="100"
+                                        Maximum="{Binding FramerateOverrideMaximum, Mode=OneWay}"
+                                        Minimum="{Binding FramerateOverrideMinimum, Mode=OneWay}"
+                                        SmallChange="1"
+                                        SpinButtonPlacementMode="Compact"
+                                        Value="{Binding FramerateValueDC, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
                                 </ui:SettingsCard>
                             </ui:SettingsExpander.Items>
                         </ui:SettingsExpander>
