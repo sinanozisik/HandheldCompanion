@@ -31,6 +31,26 @@ namespace HandheldCompanion.Misc
         public bool? FramerateLimitEnabled { get; set; }
         public int FramerateValue { get; set; } = 0; // default RTSS value
 
+        // null on power profiles saved before FramerateLimitMode existed, see GetFramerateMode()
+        public FramerateLimitMode? FramerateMode { get; set; }
+
+        public FramerateLimitMode GetFramerateMode()
+        {
+            if (FramerateMode.HasValue)
+                return FramerateMode.Value;
+
+            // legacy: a disabled limiter never touched RTSS
+            return (FramerateLimitEnabled ?? FramerateValue != 0) ? FramerateLimitMode.Limit : FramerateLimitMode.Inherit;
+        }
+
+        public void SetFramerateMode(FramerateLimitMode mode)
+        {
+            FramerateMode = mode;
+
+            // keep the legacy flag meaningful for older versions
+            FramerateLimitEnabled = mode == FramerateLimitMode.Limit;
+        }
+
         public bool EPPOverrideEnabled { get; set; }
         public uint EPPOverrideValue { get; set; } = 50;
 

@@ -452,9 +452,38 @@ namespace HandheldCompanion.Managers
         }
 
         /// <summary>
+        /// Resolves the framerate limit for a game profile and power state.
+        /// The first layer that is not Inherit wins: game profile, default game profile, power profile.
+        /// Inherit on the power profile means RTSS keeps its own limit.
+        /// </summary>
+        public (FramerateLimitMode Mode, int Value, FramerateLimitSource Source) ResolveFramerateLimit(Profile? gameProfile, int powerLineStatus, PowerProfile? powerProfile)
+        {
+            (Profile? Layer, FramerateLimitSource Source)[] layers =
+            [
+                (gameProfile, FramerateLimitSource.GameProfile),
+                (ManagerFactory.profileManager.GetDefault(), FramerateLimitSource.DefaultProfile),
+            ];
+
+            foreach ((Profile? layer, FramerateLimitSource source) in layers)
+            {
+                if (layer?.PerformanceOverrides is null)
+                    continue;
+
+                if (layer.PerformanceOverrides.TryGetValue(powerLineStatus, out PerformanceOverrides? overrides)
+                    && overrides is not null
+                    && overrides.FramerateMode != FramerateLimitMode.Inherit)
+                    return (overrides.FramerateMode, overrides.FramerateValue, source);
+            }
+
+            if (powerProfile is null)
+                return (FramerateLimitMode.Inherit, 0, FramerateLimitSource.PowerProfile);
+
+            return (powerProfile.GetFramerateMode(), powerProfile.FramerateValue, FramerateLimitSource.PowerProfile);
+        }
+
+        /// <summary>
         /// Resolves the framerate limit for the current game profile and power state.
-        /// Order: game profile override, default game profile override, current power profile.
-        /// Returns false when nothing should be applied (power profile limiter disabled, legacy behavior).
+        /// Returns false when RTSS should keep its own limit.
         /// </summary>
         public bool GetFramerateLimit(out int framerate)
         {
@@ -466,22 +495,9 @@ namespace HandheldCompanion.Managers
                 powerLineStatus = currentPowerLineStatus;
             }
 
-            foreach (Profile? layer in new[] { gameProfile, ManagerFactory.profileManager.GetDefault() })
-            {
-                if (layer?.PerformanceOverrides is null)
-                    continue;
-
-                if (layer.PerformanceOverrides.TryGetValue(powerLineStatus, out PerformanceOverrides? overrides) && overrides is not null && overrides.HasFramerateOverride)
-                {
-                    // an explicit "no limit" override clears the limiter
-                    framerate = overrides.FramerateLimitEnabled == true ? overrides.FramerateValue : 0;
-                    return true;
-                }
-            }
-
-            PowerProfile powerProfile = GetCurrent();
-            framerate = powerProfile.FramerateValue;
-            return powerProfile.FramerateLimitEnabled ?? powerProfile.FramerateValue != 0;
+            (FramerateLimitMode mode, int value, _) = ResolveFramerateLimit(gameProfile, powerLineStatus, GetCurrent());
+            framerate = mode == FramerateLimitMode.Limit ? value : 0;
+            return mode != FramerateLimitMode.Inherit;
         }
 
         public void SetStreamingPowerOverride(bool enabled)

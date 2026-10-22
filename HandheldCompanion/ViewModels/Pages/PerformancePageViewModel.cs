@@ -53,6 +53,11 @@ namespace HandheldCompanion.ViewModels
         }
     }
 
+    public sealed record FramerateModeOption(FramerateLimitMode Mode, string Label)
+    {
+        public override string ToString() => Label;
+    }
+
     public class PerformancePageViewModel : BaseViewModel
     {
         public ObservableCollection<ScreenFramelimitViewModel> FramerateLimits { get; } = [];
@@ -402,19 +407,29 @@ namespace HandheldCompanion.ViewModels
 
         public int FrameLimitMinimum => 10;
 
-        public bool FramerateLimitEnabled
+        public IReadOnlyList<FramerateModeOption> FramerateModeOptions { get; } =
+        [
+            new(FramerateLimitMode.Inherit, "Use RTSS limit"),
+            new(FramerateLimitMode.NoLimit, "No limit"),
+            new(FramerateLimitMode.Limit, "Limit"),
+        ];
+
+        public FramerateModeOption? SelectedFramerateMode
         {
-            get => SelectedPreset.FramerateLimitEnabled ?? SelectedPreset.FramerateValue != 0;
+            get => SelectedPreset is null ? null : FramerateModeOptions.FirstOrDefault(o => o.Mode == SelectedPreset.GetFramerateMode());
             set
             {
-                if (value == FramerateLimitEnabled)
+                if (value is null || SelectedPreset is null || value.Mode == SelectedPreset.GetFramerateMode())
                     return;
 
-                SelectedPreset.FramerateLimitEnabled = value;
+                SelectedPreset.SetFramerateMode(value.Mode);
+                OnPropertyChanged(nameof(SelectedFramerateMode));
                 OnPropertyChanged(nameof(FramerateLimitEnabled));
                 SubmitSelectedPreset();
             }
         }
+
+        public bool FramerateLimitEnabled => SelectedPreset?.GetFramerateMode() == FramerateLimitMode.Limit;
 
         private bool _isCustomFrameLimitSelected;
         public bool IsCustomFrameLimitSelected
@@ -915,6 +930,7 @@ namespace HandheldCompanion.ViewModels
             // Framerate limiter UI state
             nameof(FramerateLimits),
             nameof(FramerateLimitEnabled),
+            nameof(SelectedFramerateMode),
             nameof(SelectedFrameLimit),
             nameof(IsCustomFrameLimitSelected),
             nameof(CustomFrameLimitValue),

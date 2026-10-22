@@ -189,7 +189,10 @@
                     <ui:FontIcon FontFamily="{DynamicResource SymbolThemeFontFamily}" Glyph="&#xe8b2;" />
                 </ui:SettingsExpander.HeaderIcon>
 
-                <ui:ToggleSwitch IsOn="{Binding FramerateLimitEnabled, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+                <ComboBox
+                    MinWidth="140"
+                    ItemsSource="{Binding FramerateModeOptions, Mode=OneWay}"
+                    SelectedItem="{Binding SelectedFramerateMode, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
 
                 <ui:SettingsExpander.Items>
                     <ui:SettingsCard Header="Framerate limit" IsEnabled="{Binding FramerateLimitEnabled, Mode=OneWay, UpdateSourceTrigger=PropertyChanged}">
