@@ -140,8 +140,24 @@ namespace HandheldCompanion.ViewModels
                                 CollectionGroups.Remove(group);
                         }
 
+                        // The banner follows the focused game: hand it to the first remaining game, or clear it when none is left
+                        if (ReferenceEquals(_focusedProfile, foundProfile))
+                        {
+                            if (ProfilesView.Cast<ProfileViewModel>().FirstOrDefault() is { } nextProfile)
+                            {
+                                UpdateFocusedProfile(nextProfile);
+                                FocusedProfileReplaced?.Invoke(nextProfile);
+                            }
+                            else
+                            {
+                                ClearFocusedProfile();
+                                FocusedProfileReplaced?.Invoke(null);
+                            }
+                        }
+
                         foundProfile.Dispose();
                         OnPropertyChanged(nameof(GameCount));
+                        OnPropertyChanged(nameof(HasLibraryItems));
                     }
                 }
                 finally
@@ -210,6 +226,7 @@ namespace HandheldCompanion.ViewModels
             ProfileViewModel addedViewModel = new(profile, false, true);
             Profiles.Add(addedViewModel);
             OnPropertyChanged(nameof(GameCount));
+            OnPropertyChanged(nameof(HasLibraryItems));
             return addedViewModel;
         }
 
@@ -222,6 +239,7 @@ namespace HandheldCompanion.ViewModels
 
             OnPropertyChanged(nameof(HasRecentGames));
             OnPropertyChanged(nameof(GameCount));
+            OnPropertyChanged(nameof(HasLibraryItems));
         }
 
         private void UpdateRecentGames(ProfileViewModel profileViewModel)
@@ -317,9 +335,14 @@ namespace HandheldCompanion.ViewModels
                     item.IsVisible = Profiles.Any(candidate => candidate.PlatformType == item.Platform);
                     item.GameCount = Profiles.Count(candidate => candidate.PlatformType == item.Platform);
                 }
+                else if (item.Kind == LibraryNavigationItemKind.AllGames)
+                {
+                    item.GameCount = Profiles.Count;
+                }
                 else if (item.Kind == LibraryNavigationItemKind.CollectionsRoot)
                 {
-                    item.GameCount = Profiles.Count(candidate => candidate.Profile.Collections.Count > 0);
+                    HashSet<Guid> activeCollectionIds = ManagerFactory.profileManager.GetCollections().Select(collection => collection.Id).ToHashSet();
+                    item.GameCount = Profiles.Count(candidate => candidate.Profile.Collections.Any(activeCollectionIds.Contains));
                 }
             }
 
