@@ -1806,6 +1806,12 @@ namespace HandheldCompanion.ViewModels
             return $"Currently: {effective} ({origin})";
         }
 
+        private void RefreshFramerateHints()
+        {
+            OnPropertyChanged(nameof(FramerateHintDC));
+            OnPropertyChanged(nameof(FramerateHintAC));
+        }
+
         private void RefreshFramerateOverrides()
         {
             OnPropertyChanged(nameof(FramerateModeOptions));
@@ -2792,6 +2798,9 @@ namespace HandheldCompanion.ViewModels
             {
                 Monitor.Exit(_collectionLock);
             }
+
+            // the effective framerate limit may come from this power profile
+            RefreshFramerateHints();
         }
 
         public void PowerProfile_Selected(PowerProfile powerProfile, bool AC)
@@ -3122,6 +3131,10 @@ namespace HandheldCompanion.ViewModels
             // notifications that are immediately discarded when ProfileManagerLoaded clears the collection.
             if (source == UpdateSource.Serializer)
                 return;
+
+            // the default profile is an inherit layer for every game profile
+            if (profile.Default)
+                RefreshFramerateHints();
 
             isCurrent |= SelectedProfile?.Guid == profile.Guid;
             if (!IsQuickTools)
