@@ -863,10 +863,7 @@
                         Spacing="3"
                         Visibility="{Binding PerformanceManagerEnabled, Mode=OneWay, UpdateSourceTrigger=PropertyChanged, Converter={StaticResource BooleanToVisibilityConverter}}">
 
-                        <ui:SettingsExpander
-                            Description="{l:Static resx:Resources.ProfilesPage_PowerPresetDesc}"
-                            Header="{l:Static resx:Resources.ProfilesPage_PowerPreset}"
-                            IsExpanded="True">
+                        <ui:SettingsExpander Header="Plugged in" IsExpanded="False">
                             <ui:SettingsExpander.HeaderIcon>
                                 <ui:FontIcon Glyph="&#xec4a;" />
                             </ui:SettingsExpander.HeaderIcon>
@@ -874,55 +871,12 @@
                             <TextBlock
                                 Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}"
                                 Style="{StaticResource BodyTextBlockStyle}"
-                                Text="{Binding SelectedPowerProfileName, Mode=OneWay, UpdateSourceTrigger=PropertyChanged}" />
+                                Text="{Binding SelectedPickerAC.Text, Mode=OneWay, UpdateSourceTrigger=PropertyChanged}" />
 
                             <ui:SettingsExpander.Items>
                                 <ui:SettingsCard
-                                    Command="{Binding OpenPowerProfileOnBatteryCommand}"
-                                    Header="On battery"
-                                    IsClickEnabled="True"
-                                    Tag="Navigation">
-                                    <ComboBox
-                                        Name="PowerProfileOnBattery"
-                                        MaxWidth="{Binding ActualWidth, ConverterParameter=x/2.4, Converter={StaticResource Math}, RelativeSource={RelativeSource Mode=FindAncestor, AncestorType=ui:SettingsCard}}"
-                                        DisplayMemberPath="Text"
-                                        ItemContainerStyle="{StaticResource {x:Type ComboBoxItem}}"
-                                        ItemsSource="{Binding ProfilePickerCollectionViewDC, Mode=OneWay, UpdateSourceTrigger=PropertyChanged}"
-                                        SelectedItem="{Binding SelectedPickerDC, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
-                                        SelectedValuePath="Text">
-                                        <ComboBox.GroupStyle>
-                                            <GroupStyle>
-                                                <GroupStyle.HeaderTemplate>
-                                                    <DataTemplate>
-                                                        <TextBlock
-                                                            Margin="4,0,0,0"
-                                                            Style="{StaticResource BaseTextBlockStyle}"
-                                                            Text="{Binding Name, Mode=OneWay, UpdateSourceTrigger=PropertyChanged}" />
-                                                    </DataTemplate>
-                                                </GroupStyle.HeaderTemplate>
-                                            </GroupStyle>
-                                        </ComboBox.GroupStyle>
-                                    </ComboBox>
-                                </ui:SettingsCard>
-                                <ui:SettingsCard Description="{Binding FramerateHintDC, Mode=OneWay, UpdateSourceTrigger=PropertyChanged}" Header="Framerate limit on battery">
-                                    <ikw:SimpleStackPanel Orientation="Horizontal" Spacing="6">
-                                        <ui:NumberBox
-                                            MinWidth="100"
-                                            Maximum="{Binding FramerateOverrideMaximum, Mode=OneWay}"
-                                            Minimum="{Binding FramerateOverrideMinimum, Mode=OneWay}"
-                                            SmallChange="1"
-                                            SpinButtonPlacementMode="Compact"
-                                            Value="{Binding FramerateValueDC, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
-                                            Visibility="{Binding IsFramerateLimitDC, Mode=OneWay, UpdateSourceTrigger=PropertyChanged, Converter={StaticResource BooleanToVisibilityConverter}}" />
-                                        <ComboBox
-                                            MinWidth="160"
-                                            ItemsSource="{Binding FramerateModeOptions, Mode=OneWay, UpdateSourceTrigger=PropertyChanged}"
-                                            SelectedItem="{Binding SelectedFramerateModeDC, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
-                                    </ikw:SimpleStackPanel>
-                                </ui:SettingsCard>
-                                <ui:SettingsCard
                                     Command="{Binding OpenPowerProfilePluggedCommand}"
-                                    Header="Plugged in"
+                                    Header="{l:Static resx:Resources.ProfilesPage_PowerPreset}"
                                     IsClickEnabled="True"
                                     Tag="Navigation">
                                     <ComboBox
@@ -947,7 +901,8 @@
                                         </ComboBox.GroupStyle>
                                     </ComboBox>
                                 </ui:SettingsCard>
-                                <ui:SettingsCard Description="{Binding FramerateHintAC, Mode=OneWay, UpdateSourceTrigger=PropertyChanged}" Header="Framerate limit plugged in">
+
+                                <ui:SettingsCard Description="{Binding FramerateHintAC, Mode=OneWay, UpdateSourceTrigger=PropertyChanged}" Header="Framerate limit">
                                     <ikw:SimpleStackPanel Orientation="Horizontal" Spacing="6">
                                         <ui:NumberBox
                                             MinWidth="100"
@@ -962,7 +917,65 @@
                                             ItemsSource="{Binding FramerateModeOptions, Mode=OneWay, UpdateSourceTrigger=PropertyChanged}"
                                             SelectedItem="{Binding SelectedFramerateModeAC, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
                                     </ikw:SimpleStackPanel>
-                                </ui:SettingsCard>                            </ui:SettingsExpander.Items>
+                                </ui:SettingsCard>
+                            </ui:SettingsExpander.Items>
+                        </ui:SettingsExpander>
+                        <ui:SettingsExpander Header="On battery" IsExpanded="False">
+                            <ui:SettingsExpander.HeaderIcon>
+                                <ui:FontIcon Glyph="&#xebb2;" />
+                            </ui:SettingsExpander.HeaderIcon>
+
+                            <TextBlock
+                                Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}"
+                                Style="{StaticResource BodyTextBlockStyle}"
+                                Text="{Binding SelectedPickerDC.Text, Mode=OneWay, UpdateSourceTrigger=PropertyChanged}" />
+
+                            <ui:SettingsExpander.Items>
+                                <ui:SettingsCard
+                                    Command="{Binding OpenPowerProfileOnBatteryCommand}"
+                                    Header="{l:Static resx:Resources.ProfilesPage_PowerPreset}"
+                                    IsClickEnabled="True"
+                                    Tag="Navigation">
+                                    <ComboBox
+                                        Name="PowerProfileOnBattery"
+                                        MaxWidth="{Binding ActualWidth, ConverterParameter=x/2.4, Converter={StaticResource Math}, RelativeSource={RelativeSource Mode=FindAncestor, AncestorType=ui:SettingsCard}}"
+                                        DisplayMemberPath="Text"
+                                        ItemContainerStyle="{StaticResource {x:Type ComboBoxItem}}"
+                                        ItemsSource="{Binding ProfilePickerCollectionViewDC, Mode=OneWay, UpdateSourceTrigger=PropertyChanged}"
+                                        SelectedItem="{Binding SelectedPickerDC, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                        SelectedValuePath="Text">
+                                        <ComboBox.GroupStyle>
+                                            <GroupStyle>
+                                                <GroupStyle.HeaderTemplate>
+                                                    <DataTemplate>
+                                                        <TextBlock
+                                                            Margin="4,0,0,0"
+                                                            Style="{StaticResource BaseTextBlockStyle}"
+                                                            Text="{Binding Name, Mode=OneWay, UpdateSourceTrigger=PropertyChanged}" />
+                                                    </DataTemplate>
+                                                </GroupStyle.HeaderTemplate>
+                                            </GroupStyle>
+                                        </ComboBox.GroupStyle>
+                                    </ComboBox>
+                                </ui:SettingsCard>
+
+                                <ui:SettingsCard Description="{Binding FramerateHintDC, Mode=OneWay, UpdateSourceTrigger=PropertyChanged}" Header="Framerate limit">
+                                    <ikw:SimpleStackPanel Orientation="Horizontal" Spacing="6">
+                                        <ui:NumberBox
+                                            MinWidth="100"
+                                            Maximum="{Binding FramerateOverrideMaximum, Mode=OneWay}"
+                                            Minimum="{Binding FramerateOverrideMinimum, Mode=OneWay}"
+                                            SmallChange="1"
+                                            SpinButtonPlacementMode="Compact"
+                                            Value="{Binding FramerateValueDC, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                            Visibility="{Binding IsFramerateLimitDC, Mode=OneWay, UpdateSourceTrigger=PropertyChanged, Converter={StaticResource BooleanToVisibilityConverter}}" />
+                                        <ComboBox
+                                            MinWidth="160"
+                                            ItemsSource="{Binding FramerateModeOptions, Mode=OneWay, UpdateSourceTrigger=PropertyChanged}"
+                                            SelectedItem="{Binding SelectedFramerateModeDC, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+                                    </ikw:SimpleStackPanel>
+                                </ui:SettingsCard>
+                            </ui:SettingsExpander.Items>
                         </ui:SettingsExpander>
                     </ikw:SimpleStackPanel>
                 </ikw:SimpleStackPanel>
