@@ -906,7 +906,9 @@
                                     <ComboBox
                                         MinWidth="160"
                                         ItemsSource="{Binding FramerateModeOptions, Mode=OneWay, UpdateSourceTrigger=PropertyChanged}"
-                                        SelectedItem="{Binding SelectedFramerateModeAC, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+                                        DisplayMemberPath="Label"
+                                        SelectedValue="{Binding FramerateModeAC, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                        SelectedValuePath="Mode" />
                                 </ui:SettingsCard>
 
                                 <ui:SettingsCard Header="FPS" Visibility="{Binding IsFramerateLimitAC, Mode=OneWay, UpdateSourceTrigger=PropertyChanged, Converter={StaticResource BooleanToVisibilityConverter}}">
@@ -963,7 +965,9 @@
                                     <ComboBox
                                         MinWidth="160"
                                         ItemsSource="{Binding FramerateModeOptions, Mode=OneWay, UpdateSourceTrigger=PropertyChanged}"
-                                        SelectedItem="{Binding SelectedFramerateModeDC, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+                                        DisplayMemberPath="Label"
+                                        SelectedValue="{Binding FramerateModeDC, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                        SelectedValuePath="Mode" />
                                 </ui:SettingsCard>
 
                                 <ui:SettingsCard Header="FPS" Visibility="{Binding IsFramerateLimitDC, Mode=OneWay, UpdateSourceTrigger=PropertyChanged, Converter={StaticResource BooleanToVisibilityConverter}}">

@@ -1678,16 +1678,18 @@ namespace HandheldCompanion.ViewModels
         public int FramerateOverrideMinimum => 10;
         public int FramerateOverrideMaximum => 500;
 
-        public FramerateModeOption? SelectedFramerateModeDC
+        // bound through SelectedValue so the selection survives the options list being swapped
+        // (game profile vs default profile labels); a missing entry reads as Inherit
+        public FramerateLimitMode FramerateModeDC
         {
-            get => FramerateModeOptions.FirstOrDefault(o => o.Mode == GetFramerateMode(FramerateSlotDC));
-            set { if (value is not null) SetFramerateMode(FramerateSlotDC, value.Mode); }
+            get => GetFramerateMode(FramerateSlotDC);
+            set => SetFramerateMode(FramerateSlotDC, value);
         }
 
-        public FramerateModeOption? SelectedFramerateModeAC
+        public FramerateLimitMode FramerateModeAC
         {
-            get => FramerateModeOptions.FirstOrDefault(o => o.Mode == GetFramerateMode(FramerateSlotAC));
-            set { if (value is not null) SetFramerateMode(FramerateSlotAC, value.Mode); }
+            get => GetFramerateMode(FramerateSlotAC);
+            set => SetFramerateMode(FramerateSlotAC, value);
         }
 
         public bool IsFramerateLimitDC => GetFramerateMode(FramerateSlotDC) == FramerateLimitMode.Limit;
@@ -1807,8 +1809,8 @@ namespace HandheldCompanion.ViewModels
         private void RefreshFramerateOverrides()
         {
             OnPropertyChanged(nameof(FramerateModeOptions));
-            OnPropertyChanged(nameof(SelectedFramerateModeDC));
-            OnPropertyChanged(nameof(SelectedFramerateModeAC));
+            OnPropertyChanged(nameof(FramerateModeDC));
+            OnPropertyChanged(nameof(FramerateModeAC));
             OnPropertyChanged(nameof(IsFramerateLimitDC));
             OnPropertyChanged(nameof(IsFramerateLimitAC));
             OnPropertyChanged(nameof(FramerateValueDC));
@@ -3418,6 +3420,8 @@ namespace HandheldCompanion.ViewModels
 
                 UpdatePowerProfileSelections();
                 UpdateSelectedPowerProfileName();
+                GetPerformanceOverrides(FramerateSlotDC, true);
+                GetPerformanceOverrides(FramerateSlotAC, true);
                 RefreshFramerateOverrides();
                 UpdateControlsEnabledState();
                 NotifyWrapperProperties();
