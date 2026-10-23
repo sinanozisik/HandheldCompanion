@@ -12,7 +12,8 @@ namespace HandheldCompanion.Managers.Desktop;
 
 /// <summary>
 /// Reads monitor identity from the device path and the EDID, and matches connected screens to known monitors.
-/// Matching never guesses: an exact path, then a unique EDID serial, then a unique model, otherwise a new monitor.
+/// Matching never guesses: an exact path, then a unique EDID serial, then a unique EDID text serial,
+/// then a unique model, otherwise a new monitor.
 /// </summary>
 public static class MonitorIdentity
 {
@@ -47,16 +48,38 @@ public static class MonitorIdentity
 
     public static bool IsValidSerialNumber(uint serialNumber) => !InvalidSerialNumbers.Contains(serialNumber);
 
+    /// <summary>
+    /// A text serial is usable when it has a letter or digit and isn't one repeated character, e.g. "0000000000".
+    /// </summary>
+    public static bool IsValidSerialString(string? serialString)
+    {
+        string text = serialString?.Trim() ?? string.Empty;
+        return text.Any(char.IsLetterOrDigit) && text.Distinct().Count() > 1;
+    }
+
+    /// <summary>
+    /// Numeric EDID serial with the text serial, empty when the numeric serial is invalid.
+    /// </summary>
     public static string GetSerialKey(string manufacturer, ushort productCode, uint serialNumber, string serialString)
     {
         string model = GetModelKey(manufacturer, productCode);
-        string serial = IsValidSerialNumber(serialNumber) ? serialNumber.ToString("X8") : string.Empty;
-        string text = serialString?.Trim() ?? string.Empty;
-
-        if (string.IsNullOrEmpty(model) || (serial.Length == 0 && text.Length == 0))
+        if (string.IsNullOrEmpty(model) || !IsValidSerialNumber(serialNumber))
             return string.Empty;
 
-        return $"{model}|{serial}|{text}";
+        return $"{model}|{serialNumber:X8}|{serialString?.Trim() ?? string.Empty}";
+    }
+
+    /// <summary>
+    /// EDID text serial alone, the fallback for monitors whose numeric serial is invalid.
+    /// Empty when the numeric serial is valid or the text serial isn't usable.
+    /// </summary>
+    public static string GetSerialTextKey(string manufacturer, ushort productCode, uint serialNumber, string serialString)
+    {
+        string model = GetModelKey(manufacturer, productCode);
+        if (string.IsNullOrEmpty(model) || IsValidSerialNumber(serialNumber) || !IsValidSerialString(serialString))
+            return string.Empty;
+
+        return $"{model}|{serialString.Trim()}";
     }
 
     /// <summary>
@@ -200,9 +223,10 @@ public static class MonitorIdentity
     /// Assigns a known monitor to every connected screen, adding new known monitors when needed.
     /// 1. exact device path (interface guid stripped)
     /// 2. EDID serial, when valid and unique among connected and known monitors
-    /// 3. manufacturer + product, when exactly one known and one connected monitor have that model
-    /// 4. otherwise a new known monitor
-    /// The stored path is updated on a serial or model match.
+    /// 3. EDID text serial, when the numeric serial is invalid and the text is usable and unique
+    /// 4. manufacturer + product, when exactly one known and one connected monitor have that model
+    /// 5. otherwise a new known monitor
+    /// The stored path is updated on a serial, text serial or model match.
     /// </summary>
     public static void Assign(IReadOnlyList<DesktopScreen> screens, List<KnownMonitor> known)
     {
@@ -224,36 +248,15 @@ public static class MonitorIdentity
         }
 
         // 2. EDID serial
-        foreach (DesktopScreen screen in pending.ToList())
-        {
-            string serialKey = screen.SerialKey;
-            if (string.IsNullOrEmpty(serialKey) || screens.Count(s => s.SerialKey == serialKey) != 1)
-                continue;
+        MatchUniqueKey(screens, known, pending, claimed, now, s => s.SerialKey, k => k.SerialKey);
 
-            List<KnownMonitor> matches = known.Where(k => k.SerialKey == serialKey).ToList();
-            if (matches.Count != 1 || claimed.Contains(matches[0].Id))
-                continue;
+        // 3. EDID text serial
+        MatchUniqueKey(screens, known, pending, claimed, now, s => s.SerialTextKey, k => k.SerialTextKey);
 
-            Bind(screen, matches[0], claimed, now, true);
-            pending.Remove(screen);
-        }
+        // 4. manufacturer + product
+        MatchUniqueKey(screens, known, pending, claimed, now, s => s.ModelKey, k => k.ModelKey);
 
-        // 3. manufacturer + product
-        foreach (DesktopScreen screen in pending.ToList())
-        {
-            string modelKey = screen.ModelKey;
-            if (string.IsNullOrEmpty(modelKey) || screens.Count(s => s.ModelKey == modelKey) != 1)
-                continue;
-
-            List<KnownMonitor> matches = known.Where(k => k.ModelKey == modelKey).ToList();
-            if (matches.Count != 1 || claimed.Contains(matches[0].Id))
-                continue;
-
-            Bind(screen, matches[0], claimed, now, true);
-            pending.Remove(screen);
-        }
-
-        // 4. new monitor
+        // 5. new monitor
         foreach (DesktopScreen screen in pending)
         {
             KnownMonitor monitor = new()
@@ -265,6 +268,25 @@ public static class MonitorIdentity
 
             LogManager.LogInformation("New monitor {0} ({1}) added to known monitors", screen.FriendlyName, screen.ModelKey);
             Bind(screen, monitor, claimed, now, false);
+        }
+    }
+
+    // binds pending screens whose key is unique among connected screens and matches exactly one unclaimed known monitor
+    private static void MatchUniqueKey(IReadOnlyList<DesktopScreen> screens, List<KnownMonitor> known, List<DesktopScreen> pending,
+        HashSet<Guid> claimed, DateTime now, Func<DesktopScreen, string> screenKey, Func<KnownMonitor, string> knownKey)
+    {
+        foreach (DesktopScreen screen in pending.ToList())
+        {
+            string key = screenKey(screen);
+            if (string.IsNullOrEmpty(key) || screens.Count(s => screenKey(s) == key) != 1)
+                continue;
+
+            List<KnownMonitor> matches = known.Where(k => knownKey(k) == key).ToList();
+            if (matches.Count != 1 || claimed.Contains(matches[0].Id))
+                continue;
+
+            Bind(screen, matches[0], claimed, now, true);
+            pending.Remove(screen);
         }
     }
 

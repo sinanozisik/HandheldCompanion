@@ -43,8 +43,10 @@ public class MultimediaManager : IManager
     private readonly object _knownMonitorsLock = new();
     private static string KnownMonitorsPath => Path.Combine(App.SettingsPath, "monitors.json");
 
-    // Profile display modes: the mode each monitor had before HC applied a profile override
-    private readonly ConcurrentDictionary<Guid, DisplayModeBaseline> _displayBaselines = new();
+    // System display modes: the mode each monitor had before HC applied a profile override,
+    // also saved to settings so the next start can put it back after a crash
+    private const string LastSystemDisplayModesSettingsName = "LastSystemDisplayModes";
+    private readonly ConcurrentDictionary<Guid, SystemDisplayMode> _systemDisplayModes = new();
     private readonly object _profileDisplayLock = new();
 
     // Audio management
@@ -100,6 +102,9 @@ public class MultimediaManager : IManager
 
         // Initial display query
         SystemEvents_DisplaySettingsChanged(null, new EventArgs());
+
+        // System display modes left by a session that didn't stop, checked against the connected monitors
+        LoadSystemDisplayModes();
 
         // Profile display modes follow the applied power profile (profile activation and power state changes)
         switch (ManagerFactory.powerProfileManager.Status)
@@ -161,7 +166,7 @@ public class MultimediaManager : IManager
         ManagerFactory.processManager.ForegroundChanged -= ProcessManager_ForegroundChanged;
         ManagerFactory.profileManager.Applied -= ProfileManager_Applied;
 
-        // Put back the modes HC changed for the current profile
+        // Put back the system display modes
         RestoreProfileDisplayModes();
 
         base.Stop();
@@ -608,6 +613,10 @@ public class MultimediaManager : IManager
             if (screenResolution is not null && PrimaryDesktop is not null)
                 DisplaySettingsChanged?.Invoke(PrimaryDesktop, screenResolution);
 
+            // A mode changed outside HC (e.g. Windows Settings) becomes the system display mode
+            if (IsReady)
+                AdoptChangedSystemDisplayModes();
+
             // A newly connected monitor gets the current profile display mode
             if (screenConnected && IsReady)
                 QueueProfileDisplayModes();
@@ -823,7 +832,18 @@ public class MultimediaManager : IManager
 
     #region Profile Display Modes
 
-    private sealed record DisplayModeBaseline(int Width, int Height, int Frequency, bool FrequencyOnly);
+    // the mode a monitor had before HC changed it, with the mode HC applied over it:
+    // on start, a monitor still in the applied mode means HC stopped while its override was active
+    private sealed record SystemDisplayMode(int Width, int Height, int Frequency, bool FrequencyOnly)
+    {
+        public int AppliedWidth { get; init; }
+        public int AppliedHeight { get; init; }
+        public int AppliedFrequency { get; init; }
+
+        // entries saved before the applied mode was recorded have none
+        [JsonIgnore]
+        public bool HasAppliedMode => AppliedFrequency != 0;
+    }
 
     private sealed record DisplayTarget(Guid Id, string DeviceName, string Name, bool IsPrimary, List<ScreenResolution> Resolutions);
 
@@ -849,7 +869,7 @@ public class MultimediaManager : IManager
 
     /// <summary>
     /// Applies the resolved display mode of the current game profile to every connected monitor.
-    /// Monitors without an override get back the mode they had before HC changed it.
+    /// Monitors without an override get back their system display mode.
     /// </summary>
     private void ApplyProfileDisplayModes()
     {
@@ -873,43 +893,44 @@ public class MultimediaManager : IManager
                     bool hasResolution = mode.HasResolution && !resolutionLocked;
                     bool hasRefreshRate = mode.HasRefreshRate;
 
-                    _displayBaselines.TryGetValue(target.Id, out DisplayModeBaseline? baseline);
+                    _systemDisplayModes.TryGetValue(target.Id, out SystemDisplayMode? systemMode);
 
                     if (!hasResolution && !hasRefreshRate)
                     {
-                        if (baseline is not null)
+                        if (systemMode is not null)
                         {
-                            LogManager.LogInformation("Restoring display mode of {0}", target.Name);
-                            SetDisplayMode(target, baseline.Width, baseline.Height, baseline.Frequency, baseline.FrequencyOnly);
-                            _displayBaselines.TryRemove(target.Id, out _);
+                            LogManager.LogInformation("Restoring system display mode of {0}", target.Name);
+                            SetDisplayMode(target, systemMode.Width, systemMode.Height, systemMode.Frequency, systemMode.FrequencyOnly);
+                            RemoveSystemDisplayMode(target.Id);
                         }
                         continue;
                     }
 
                     DisplayDevice current = GetDisplay(target.DeviceName);
-                    if (baseline is null)
+                    if (systemMode is null)
                     {
-                        baseline = new(current.dmPelsWidth, current.dmPelsHeight, current.dmDisplayFrequency, !hasResolution);
-                        _displayBaselines[target.Id] = baseline;
+                        systemMode = new(current.dmPelsWidth, current.dmPelsHeight, current.dmDisplayFrequency, !hasResolution);
+                        SetSystemDisplayMode(target.Id, systemMode);
                     }
-                    else if (baseline.FrequencyOnly && hasResolution)
+                    else if (systemMode.FrequencyOnly && hasResolution)
                     {
                         // the resolution was left alone so far, remember it before changing it
-                        baseline = baseline with { Width = current.dmPelsWidth, Height = current.dmPelsHeight, FrequencyOnly = false };
-                        _displayBaselines[target.Id] = baseline;
+                        systemMode = systemMode with { Width = current.dmPelsWidth, Height = current.dmPelsHeight, FrequencyOnly = false };
+                        SetSystemDisplayMode(target.Id, systemMode);
                     }
 
-                    bool frequencyOnly = !hasResolution && baseline.FrequencyOnly;
-                    int width = hasResolution ? mode.Width : baseline.Width;
-                    int height = hasResolution ? mode.Height : baseline.Height;
+                    bool frequencyOnly = !hasResolution && systemMode.FrequencyOnly;
+                    int width = hasResolution ? mode.Width : systemMode.Width;
+                    int height = hasResolution ? mode.Height : systemMode.Height;
                     if (frequencyOnly)
                     {
                         width = current.dmPelsWidth;
                         height = current.dmPelsHeight;
                     }
-                    int frequency = hasRefreshRate ? mode.RefreshRate : baseline.Frequency;
+                    int frequency = hasRefreshRate ? mode.RefreshRate : systemMode.Frequency;
 
                     SetDisplayMode(target, width, height, frequency, frequencyOnly);
+                    RecordCurrentMode(target);
                 }
                 catch (Exception ex)
                 {
@@ -920,22 +941,22 @@ public class MultimediaManager : IManager
     }
 
     /// <summary>
-    /// Mode a monitor had before HC changed it for a profile, the given current mode when HC didn't change it.
+    /// System display mode of a monitor (the mode it had before HC changed it for a profile), the given current mode when HC didn't change it.
     /// Doesn't take the profile display lock, so the UI can ask while a mode change is running.
     /// </summary>
-    public (int Width, int Height, int Frequency) GetBaselineMode(Guid monitorId, int currentWidth, int currentHeight, int currentFrequency)
+    public (int Width, int Height, int Frequency) GetSystemDisplayMode(Guid monitorId, int currentWidth, int currentHeight, int currentFrequency)
     {
-        if (!_displayBaselines.TryGetValue(monitorId, out DisplayModeBaseline? baseline))
+        if (!_systemDisplayModes.TryGetValue(monitorId, out SystemDisplayMode? systemMode))
             return (currentWidth, currentHeight, currentFrequency);
 
         // only the refresh rate was changed, the resolution is still the original one
-        return baseline.FrequencyOnly
-            ? (currentWidth, currentHeight, baseline.Frequency)
-            : (baseline.Width, baseline.Height, baseline.Frequency);
+        return systemMode.FrequencyOnly
+            ? (currentWidth, currentHeight, systemMode.Frequency)
+            : (systemMode.Width, systemMode.Height, systemMode.Frequency);
     }
 
     /// <summary>
-    /// Puts back every display mode HC changed for a profile.
+    /// Puts back the system display mode of every monitor HC changed for a profile.
     /// </summary>
     private void RestoreProfileDisplayModes()
     {
@@ -943,22 +964,170 @@ public class MultimediaManager : IManager
         {
             foreach (DisplayTarget target in GetDisplayTargets())
             {
-                if (!_displayBaselines.TryGetValue(target.Id, out DisplayModeBaseline? baseline))
+                if (!_systemDisplayModes.TryGetValue(target.Id, out SystemDisplayMode? systemMode))
                     continue;
 
                 try
                 {
-                    LogManager.LogInformation("Restoring display mode of {0}", target.Name);
-                    SetDisplayMode(target, baseline.Width, baseline.Height, baseline.Frequency, baseline.FrequencyOnly);
+                    LogManager.LogInformation("Restoring system display mode of {0}", target.Name);
+                    SetDisplayMode(target, systemMode.Width, systemMode.Height, systemMode.Frequency, systemMode.FrequencyOnly);
                 }
                 catch (Exception ex)
                 {
-                    LogManager.LogError("Failed to restore display mode on {0}: {1}", target.Name, ex.Message);
+                    LogManager.LogError("Failed to restore system display mode on {0}: {1}", target.Name, ex.Message);
                 }
             }
 
-            _displayBaselines.Clear();
+            _systemDisplayModes.Clear();
+            SaveSystemDisplayModes();
         }
+    }
+
+    // saved before the mode changes, so a crash right after still leaves the system display mode on record
+    private void SetSystemDisplayMode(Guid monitorId, SystemDisplayMode systemMode)
+    {
+        _systemDisplayModes[monitorId] = systemMode;
+        SaveSystemDisplayModes();
+    }
+
+    // the mode HC is about to set or just set, saved so neither a crash nor a later display change notification
+    // for HC's own change is taken for a user change
+    private void RecordAppliedMode(Guid monitorId, int width, int height, int frequency)
+    {
+        if (_systemDisplayModes.TryGetValue(monitorId, out SystemDisplayMode? systemMode))
+            SetSystemDisplayMode(monitorId, systemMode with { AppliedWidth = width, AppliedHeight = height, AppliedFrequency = frequency });
+    }
+
+    // the mode the monitor ended up in, also when the change failed and the mode stayed as it was
+    private void RecordCurrentMode(DisplayTarget target)
+    {
+        DisplayDevice current = GetDisplay(target.DeviceName);
+        RecordAppliedMode(target.Id, current.dmPelsWidth, current.dmPelsHeight, current.dmDisplayFrequency);
+    }
+
+    private static bool IsAppliedMode(SystemDisplayMode systemMode, DisplayDevice current)
+    {
+        return IsSameMode(current, systemMode.AppliedWidth, systemMode.AppliedHeight, systemMode.AppliedFrequency, systemMode.FrequencyOnly);
+    }
+
+    // a frequency-only change leaves the resolution to others (e.g. integer scaling), only the refresh rate is compared
+    private static bool IsSameMode(DisplayDevice current, int width, int height, int frequency, bool frequencyOnly)
+    {
+        if (frequencyOnly)
+            return current.dmDisplayFrequency == frequency;
+
+        return current.dmPelsWidth == width && current.dmPelsHeight == height && current.dmDisplayFrequency == frequency;
+    }
+
+    /// <summary>
+    /// A mode changed outside HC (e.g. Windows Settings) becomes the system display mode of that monitor,
+    /// so ending the override or stopping HC keeps it. Only the system display mode is updated: profiles aren't written
+    /// and the current override isn't applied again until the next profile apply.
+    /// Skipped while HC is changing a mode: HC records the applied mode before it releases the lock,
+    /// so a notification that arrives later for its own change matches.
+    /// </summary>
+    private void AdoptChangedSystemDisplayModes()
+    {
+        if (_systemDisplayModes.IsEmpty || !System.Threading.Monitor.TryEnter(_profileDisplayLock))
+            return;
+
+        try
+        {
+            foreach (DisplayTarget target in GetDisplayTargets())
+            {
+                // an entry left by a previous session without an applied mode waits for the first apply pass
+                if (!_systemDisplayModes.TryGetValue(target.Id, out SystemDisplayMode? systemMode) || !systemMode.HasAppliedMode)
+                    continue;
+
+                DisplayDevice current = GetDisplay(target.DeviceName);
+                if (IsAppliedMode(systemMode, current))
+                    continue;
+
+                LogManager.LogInformation("Display mode of {0} changed outside HC ({1}x{2}@{3}Hz, HC applied {4}x{5}@{6}Hz), adopted as its system display mode",
+                    target.Name, current.dmPelsWidth, current.dmPelsHeight, current.dmDisplayFrequency, systemMode.AppliedWidth, systemMode.AppliedHeight, systemMode.AppliedFrequency);
+
+                // the current mode is both the system display mode and the last applied one, so the next change outside HC is seen too
+                SetSystemDisplayMode(target.Id, systemMode with
+                {
+                    Width = current.dmPelsWidth,
+                    Height = current.dmPelsHeight,
+                    Frequency = current.dmDisplayFrequency,
+                    AppliedWidth = current.dmPelsWidth,
+                    AppliedHeight = current.dmPelsHeight,
+                    AppliedFrequency = current.dmDisplayFrequency,
+                });
+            }
+        }
+        finally
+        {
+            System.Threading.Monitor.Exit(_profileDisplayLock);
+        }
+    }
+
+    private void RemoveSystemDisplayMode(Guid monitorId)
+    {
+        if (_systemDisplayModes.TryRemove(monitorId, out _))
+            SaveSystemDisplayModes();
+    }
+
+    private void SaveSystemDisplayModes()
+    {
+        string json = _systemDisplayModes.IsEmpty ? string.Empty : JsonConvert.SerializeObject(_systemDisplayModes);
+        ManagerFactory.settingsManager.SetProperty(LastSystemDisplayModesSettingsName, json);
+    }
+
+    /// <summary>
+    /// Takes back the system display modes saved by a session that didn't stop:
+    /// - monitor in the mode HC applied, or no applied mode recorded: kept, the first profile display mode pass
+    ///   puts the system display mode back and clears it, unless an override applies
+    /// - monitor already in its system display mode: cleared
+    /// - any other mode: changed while HC wasn't running, the current mode is the system display mode, so the entry is cleared
+    ///   and the monitor is left alone
+    /// </summary>
+    private void LoadSystemDisplayModes()
+    {
+        string json = ManagerFactory.settingsManager.GetString(LastSystemDisplayModesSettingsName);
+        if (string.IsNullOrEmpty(json))
+            return;
+
+        try
+        {
+            Dictionary<Guid, SystemDisplayMode> systemModes = JsonConvert.DeserializeObject<Dictionary<Guid, SystemDisplayMode>>(json) ?? [];
+            List<DisplayTarget> targets = GetDisplayTargets();
+
+            foreach (KeyValuePair<Guid, SystemDisplayMode> pair in systemModes)
+            {
+                SystemDisplayMode systemMode = pair.Value;
+                DisplayTarget? target = targets.FirstOrDefault(t => t.Id == pair.Key);
+                if (target is null)
+                {
+                    LogManager.LogInformation("Dropped last system display mode of monitor {0}, it isn't connected", pair.Key);
+                    continue;
+                }
+
+                DisplayDevice current = GetDisplay(target.DeviceName);
+                if (systemMode.HasAppliedMode && !IsAppliedMode(systemMode, current))
+                {
+                    if (IsSameMode(current, systemMode.Width, systemMode.Height, systemMode.Frequency, systemMode.FrequencyOnly))
+                        LogManager.LogInformation("Cleared last system display mode of {0}, the monitor is already in it", target.Name);
+                    else
+                        LogManager.LogInformation("Display mode of {0} changed while HC wasn't running ({1}x{2}@{3}Hz, HC applied {4}x{5}@{6}Hz), adopted as its system display mode",
+                            target.Name, current.dmPelsWidth, current.dmPelsHeight, current.dmDisplayFrequency, systemMode.AppliedWidth, systemMode.AppliedHeight, systemMode.AppliedFrequency);
+                    continue;
+                }
+
+                _systemDisplayModes[pair.Key] = systemMode;
+                LogManager.LogInformation("Kept last system display mode of {0} ({1}x{2}@{3}Hz), HC stopped before putting it back",
+                    target.Name, systemMode.Width, systemMode.Height, systemMode.Frequency);
+            }
+        }
+        catch (Exception ex)
+        {
+            LogManager.LogError("Failed to load last system display modes: {0}", ex.Message);
+        }
+
+        // only the entries taken back stay saved
+        SaveSystemDisplayModes();
     }
 
     /// <summary>
@@ -986,6 +1155,9 @@ public class MultimediaManager : IManager
 
         if (current.dmPelsWidth == width && current.dmPelsHeight == height && current.dmDisplayFrequency == frequency)
             return true;
+
+        // saved before the change, so a crash during it still finds the monitor in the recorded mode
+        RecordAppliedMode(target.Id, width, height, frequency);
 
         DisplayDevice dm = new DisplayDevice
         {
@@ -1034,7 +1206,9 @@ public class MultimediaManager : IManager
         {
             try
             {
-                return SetDisplayMode(target, width, height, frequency, false);
+                bool result = SetDisplayMode(target, width, height, frequency, false);
+                RecordCurrentMode(target);
+                return result;
             }
             catch (Exception ex)
             {

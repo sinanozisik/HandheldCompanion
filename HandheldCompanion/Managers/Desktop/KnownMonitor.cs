@@ -31,4 +31,7 @@ public class KnownMonitor
 
     [JsonIgnore]
     public string SerialKey => MonitorIdentity.GetSerialKey(Manufacturer, ProductCode, SerialNumber, SerialString);
+
+    [JsonIgnore]
+    public string SerialTextKey => MonitorIdentity.GetSerialTextKey(Manufacturer, ProductCode, SerialNumber, SerialString);
 }
