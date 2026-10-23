@@ -593,18 +593,24 @@ public class MultimediaManager : IManager
             foreach (DesktopScreen desktop in desktopScreens.Values.Where(a => !AllScreens.ContainsKey(a.DevicePath)))
             {
                 screenConnected = true;
-                _enforcedDisplayModes.TryRemove(desktop.KnownMonitorId, out _);
                 LogManager.LogInformation("Screen {0} connected", desktop.ToString());
                 ScreenConnected?.Invoke(desktop);
             }
 
             // Raise events for disconnected screens
+            bool screenDisconnected = false;
             foreach (DesktopScreen desktop in AllScreens.Values.Where(a => !desktopScreens.ContainsKey(a.DevicePath)))
             {
-                _enforcedDisplayModes.TryRemove(desktop.KnownMonitorId, out _);
+                screenDisconnected = true;
                 LogManager.LogInformation("Screen {0} disconnected", desktop.ToString());
                 ScreenDisconnected?.Invoke(desktop);
             }
+
+            // Windows puts every monitor back in its saved mode when one is connected or disconnected,
+            // so the profile display modes are enforced again on all of them
+            bool topologyChanged = screenConnected || screenDisconnected;
+            if (topologyChanged)
+                _enforcedDisplayModes.Clear();
 
             // Update AllScreens collection
             foreach (var screen in AllScreens.Values)
@@ -619,12 +625,13 @@ public class MultimediaManager : IManager
             if (screenResolution is not null && PrimaryDesktop is not null)
                 DisplaySettingsChanged?.Invoke(PrimaryDesktop, screenResolution);
 
-            // A mode changed outside HC (e.g. Windows Settings) becomes the system display mode
-            if (IsReady)
+            // A mode changed outside HC (e.g. Windows Settings) becomes the system display mode,
+            // the saved mode Windows sets on a connect or disconnect doesn't
+            if (IsReady && !topologyChanged)
                 AdoptChangedSystemDisplayModes();
 
-            // A newly connected monitor gets the current profile display mode
-            if (screenConnected && IsReady)
+            // Connected and remaining monitors get the current profile display mode
+            if (topologyChanged && IsReady)
                 QueueProfileDisplayModes();
 
             // The game window may sit on another monitor after a topology change
