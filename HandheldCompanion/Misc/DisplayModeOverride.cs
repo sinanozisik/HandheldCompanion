@@ -1,3 +1,4 @@
+using Newtonsoft.Json;
 using System;
 
 namespace HandheldCompanion.Misc
@@ -51,7 +52,10 @@ namespace HandheldCompanion.Misc
         public DisplayOverrideMode RefreshMode { get; set; } = DisplayOverrideMode.Inherit;
         public int RefreshRate { get; set; } = 0;
 
+        [JsonIgnore]
         public bool HasResolution => ResolutionMode == DisplayOverrideMode.Override && Width > 0 && Height > 0;
+
+        [JsonIgnore]
         public bool HasRefreshRate => RefreshMode == DisplayOverrideMode.Override && RefreshRate > 0;
     }
 }
