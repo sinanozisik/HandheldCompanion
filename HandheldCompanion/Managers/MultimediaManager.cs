@@ -49,6 +49,10 @@ public class MultimediaManager : IManager
     private readonly ConcurrentDictionary<Guid, SystemDisplayMode> _systemDisplayModes = new();
     private readonly object _profileDisplayLock = new();
 
+    // Last display mode HC enforced on each monitor: an apply that resolves the same one leaves the monitor alone,
+    // so a mode picked since then (outside HC or from the quick settings) stays until the profile, power state or mode changes
+    private readonly ConcurrentDictionary<Guid, EnforcedDisplayMode> _enforcedDisplayModes = new();
+
     // Audio management
     private readonly MMDeviceEnumerator _deviceEnumerator;
     private MMDevice? _multimediaDevice;
@@ -589,6 +593,7 @@ public class MultimediaManager : IManager
             foreach (DesktopScreen desktop in desktopScreens.Values.Where(a => !AllScreens.ContainsKey(a.DevicePath)))
             {
                 screenConnected = true;
+                _enforcedDisplayModes.TryRemove(desktop.KnownMonitorId, out _);
                 LogManager.LogInformation("Screen {0} connected", desktop.ToString());
                 ScreenConnected?.Invoke(desktop);
             }
@@ -596,6 +601,7 @@ public class MultimediaManager : IManager
             // Raise events for disconnected screens
             foreach (DesktopScreen desktop in AllScreens.Values.Where(a => !desktopScreens.ContainsKey(a.DevicePath)))
             {
+                _enforcedDisplayModes.TryRemove(desktop.KnownMonitorId, out _);
                 LogManager.LogInformation("Screen {0} disconnected", desktop.ToString());
                 ScreenDisconnected?.Invoke(desktop);
             }
@@ -847,6 +853,17 @@ public class MultimediaManager : IManager
 
     private sealed record DisplayTarget(Guid Id, string DeviceName, string Name, bool IsPrimary, List<ScreenResolution> Resolutions);
 
+    private sealed record EnforcedDisplayMode(Guid ProfileId, int PowerLineStatus, ResolvedDisplayMode Mode, bool ResolutionLocked);
+
+    private static EnforcedDisplayMode ResolveEnforcedDisplayMode(DisplayTarget target, Profile? profile, int powerLineStatus)
+    {
+        ResolvedDisplayMode mode = ManagerFactory.powerProfileManager.ResolveDisplayMode(profile, powerLineStatus, target.Id);
+
+        // integer scaling drives the primary display resolution, only the refresh rate is ours
+        bool resolutionLocked = target.IsPrimary && profile?.IntegerScalingEnabled == true;
+        return new(profile?.Guid ?? Guid.Empty, powerLineStatus, mode, resolutionLocked);
+    }
+
     /// <summary>
     /// Applies the profile display modes off the caller thread: changing a mode broadcasts WM_DISPLAYCHANGE,
     /// which must not run while the power profile manager holds its lock.
@@ -886,11 +903,14 @@ public class MultimediaManager : IManager
             {
                 try
                 {
-                    ResolvedDisplayMode mode = ManagerFactory.powerProfileManager.ResolveDisplayMode(profile, powerLineStatus, target.Id);
+                    EnforcedDisplayMode enforced = ResolveEnforcedDisplayMode(target, profile, powerLineStatus);
+                    if (_enforcedDisplayModes.TryGetValue(target.Id, out EnforcedDisplayMode? lastEnforced) && lastEnforced == enforced)
+                        continue;
 
-                    // integer scaling drives the primary display resolution, only the refresh rate is ours
-                    bool resolutionLocked = target.IsPrimary && profile?.IntegerScalingEnabled == true;
-                    bool hasResolution = mode.HasResolution && !resolutionLocked;
+                    _enforcedDisplayModes[target.Id] = enforced;
+
+                    ResolvedDisplayMode mode = enforced.Mode;
+                    bool hasResolution = mode.HasResolution && !enforced.ResolutionLocked;
                     bool hasRefreshRate = mode.HasRefreshRate;
 
                     _systemDisplayModes.TryGetValue(target.Id, out SystemDisplayMode? systemMode);
@@ -934,6 +954,8 @@ public class MultimediaManager : IManager
                 }
                 catch (Exception ex)
                 {
+                    // the next apply tries again
+                    _enforcedDisplayModes.TryRemove(target.Id, out _);
                     LogManager.LogError("Failed to apply profile display mode on {0}: {1}", target.Name, ex.Message);
                 }
             }
@@ -979,6 +1001,7 @@ public class MultimediaManager : IManager
             }
 
             _systemDisplayModes.Clear();
+            _enforcedDisplayModes.Clear();
             SaveSystemDisplayModes();
         }
     }
@@ -1208,6 +1231,11 @@ public class MultimediaManager : IManager
             {
                 bool result = SetDisplayMode(target, width, height, frequency, false);
                 RecordCurrentMode(target);
+
+                // the current profile display mode counts as enforced, so the next apply of the same profile doesn't undo this one
+                if (ManagerFactory.powerProfileManager.GetCurrentGameProfile(out Profile? profile, out int powerLineStatus))
+                    _enforcedDisplayModes[target.Id] = ResolveEnforcedDisplayMode(target, profile, powerLineStatus);
+
                 return result;
             }
             catch (Exception ex)
