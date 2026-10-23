@@ -9273,15 +9273,6 @@ namespace HandheldCompanion.Properties {
         }
         
         /// <summary>
-        ///   Looks up a localized string similar to Use RTSS limit.
-        /// </summary>
-        public static string OverrideMode_UseRTSSLimit {
-            get {
-                return ResourceManager.GetString("OverrideMode_UseRTSSLimit", resourceCulture);
-            }
-        }
-        
-        /// <summary>
         ///   Looks up a localized string similar to Aggressive.
         /// </summary>
         public static string PerformancePage_CPUBoost_Aggressive {

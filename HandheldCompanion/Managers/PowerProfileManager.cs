@@ -481,8 +481,11 @@ namespace HandheldCompanion.Managers
             if (powerProfile is null)
                 return (FramerateLimitMode.Inherit, 0, FramerateLimitSource.PowerProfile);
 
-            FramerateLimitMode powerMode = powerProfile.GetFramerateMode();
-            return (powerMode, powerMode == FramerateLimitMode.Override ? Math.Max(0, powerProfile.FramerateValue) : 0, FramerateLimitSource.PowerProfile);
+            // same rule as upstream: an enabled limiter writes its value, 0 removes the limit
+            if (powerProfile.FramerateLimitEnabled ?? powerProfile.FramerateValue != 0)
+                return (FramerateLimitMode.Override, Math.Max(0, powerProfile.FramerateValue), FramerateLimitSource.PowerProfile);
+
+            return (FramerateLimitMode.Inherit, 0, FramerateLimitSource.PowerProfile);
         }
 
         /// <summary>
