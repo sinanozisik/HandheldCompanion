@@ -58,6 +58,82 @@ namespace HandheldCompanion.ViewModels
         public override string ToString() => Label;
     }
 
+    public sealed record DisplayModeOption(DisplayOverrideMode Mode, string Label)
+    {
+        public override string ToString() => Label;
+    }
+
+    public sealed record DisplayMonitorOption(Guid Id, string Label, bool IsPrimary, int CurrentWidth, int CurrentHeight, int CurrentFrequency, IReadOnlyList<DisplayResolutionOption> Resolutions)
+    {
+        // built-in panel, shown as an Internal badge on the profile monitor rows
+        public bool IsInternal { get; init; }
+
+        public override string ToString() => Label;
+    }
+
+    // which monitor the framerate presets of a profile come from
+    public enum FramerateSourceBadge
+    {
+        None = 0,
+        RunningHere = 1,
+        LastUsed = 2,
+        Default = 3,
+    }
+
+    // monitor entry of the profile Display picker, with its badges
+    public sealed record DisplayMonitorItem(Guid Id, string Label, bool IsMain, FramerateSourceBadge SourceBadge)
+    {
+        // built-in panel, shown as an Internal badge
+        public bool IsInternal { get; init; }
+
+        // the main display fallback (Default) still drives the presets but carries no badge
+        public bool HasSourceBadge => SourceBadge is FramerateSourceBadge.RunningHere or FramerateSourceBadge.LastUsed;
+        public bool IsRunningHere => SourceBadge == FramerateSourceBadge.RunningHere;
+        public string SourceBadgeText => SourceBadge switch
+        {
+            FramerateSourceBadge.RunningHere => Resources.DisplayMonitor_RunningHere,
+            FramerateSourceBadge.LastUsed => Resources.DisplayMonitor_LastUsed,
+            _ => string.Empty,
+        };
+        public string SourceBadgeToolTip => SourceBadge switch
+        {
+            FramerateSourceBadge.RunningHere => Resources.DisplayMonitor_RunningHereToolTip,
+            FramerateSourceBadge.LastUsed => Resources.DisplayMonitor_LastUsedToolTip,
+            _ => string.Empty,
+        };
+
+        // badges as secondary text, e.g. "Internal · Main · Last used"; null without badges so a row stays single line
+        public string? BadgeText
+        {
+            get
+            {
+                List<string> parts = [];
+                if (IsInternal)
+                    parts.Add(Resources.DisplayMonitor_Internal);
+                if (IsMain)
+                    parts.Add(Resources.DisplayMonitor_Main);
+                if (HasSourceBadge)
+                    parts.Add(SourceBadgeText);
+                return parts.Count == 0 ? null : string.Join(" \u00B7 ", parts);
+            }
+        }
+
+        public override string ToString() => Label;
+    }
+
+    public sealed record DisplayResolutionOption(int Width, int Height, IReadOnlyList<DisplayRefreshOption> RefreshRates)
+    {
+        public string Key => $"{Width}x{Height}";
+        public string Label => $"{Width} x {Height}";
+        public override string ToString() => Label;
+    }
+
+    public sealed record DisplayRefreshOption(int Frequency)
+    {
+        public string Label => $"{Frequency} Hz";
+        public override string ToString() => Label;
+    }
+
     public class PerformancePageViewModel : BaseViewModel
     {
         public ObservableCollection<ScreenFramelimitViewModel> FramerateLimits { get; } = [];
@@ -423,8 +499,8 @@ namespace HandheldCompanion.ViewModels
 
         public IReadOnlyList<FramerateModeOption> FramerateModeOptions { get; } =
         [
-            new(FramerateLimitMode.Inherit, "Use RTSS limit"),
-            new(FramerateLimitMode.Override, "Override"),
+            new(FramerateLimitMode.Inherit, Resources.OverrideMode_UseRTSSLimit),
+            new(FramerateLimitMode.Override, Resources.OverrideMode_Override),
         ];
 
         public FramerateModeOption? SelectedFramerateMode

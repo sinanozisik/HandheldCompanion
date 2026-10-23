@@ -33,6 +33,7 @@
     <converters:IsNullConverter x:Key="IsNullConverter" />
     <converters:IsVerticalOrientationConverter x:Key="IsVerticalOrientationConverter" />
     <converters:ResourceFormatConverter x:Key="ResourceFormatConverter" />
+    <converters:ResourceStringFormatConverter x:Key="ResourceStringFormatConverter" />
     <converters:TypeToVisibilityConverter x:Key="TypeToVisibilityConverter" />
     <converters:ActionTypeIndexToNameConverter x:Key="ActionTypeIndexToNameConverter" />
     <converters:ActionDisplayConverter x:Key="ActionDisplayConverter" />
@@ -2029,5 +2030,180 @@
 
             <ItemsControl ItemTemplate="{StaticResource TriggerMappingTemplate}" ItemsSource="{Binding TriggerMappings, Mode=OneWay, UpdateSourceTrigger=PropertyChanged}" />
         </StackPanel>
+    </DataTemplate>
+
+    <!--  Outlined monitor badge (Internal, Main) of DevicePage and QuickDevicePage  -->
+    <Style x:Key="DisplayMonitorBadgeStyle" TargetType="Border">
+        <Setter Property="Padding" Value="5,0" />
+        <Setter Property="VerticalAlignment" Value="Center" />
+        <Setter Property="BorderBrush" Value="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
+        <Setter Property="BorderThickness" Value="1" />
+        <Setter Property="CornerRadius" Value="4" />
+    </Style>
+
+    <!--  Profile display override row (ProfilesPage and QuickProfilesPage): one monitor of a power slot; these rows sit outside the expander item list, so they carry its item look themselves  -->
+    <DataTemplate x:Key="DisplayOverrideRowTemplate">
+        <ikw:SimpleStackPanel>
+            <!--  several monitors: a clickable monitor row shows or hides the rows below  -->
+            <ui:SettingsCard
+                MinHeight="52"
+                Padding="{DynamicResource ClickableSettingsExpanderItemPadding}"
+                ui:ControlHelper.CornerRadius="0"
+                BorderThickness="{DynamicResource SettingsExpanderItemBorderThickness}"
+                Command="{Binding ToggleExpandedCommand}"
+                Description="{Binding BadgeText, Mode=OneWay}"
+                Header="{Binding Name, Mode=OneWay}"
+                IsActionIconVisible="False"
+                IsClickEnabled="True"
+                Visibility="{Binding HasMultipleDisplays, Mode=OneWay, Converter={StaticResource BooleanToVisibilityConverter}}">
+                <ikw:SimpleStackPanel Orientation="Horizontal" Spacing="12">
+                    <!--  same look as the other row summaries; inherited parts italic, overridden parts upright and semibold  -->
+                    <TextBlock
+                        VerticalAlignment="Center"
+                        Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}"
+                        Style="{StaticResource BodyTextBlockStyle}"
+                        TextTrimming="CharacterEllipsis"
+                        TextWrapping="NoWrap"><Run Text="{Binding Summary.Resolution, Mode=OneWay}">
+                            <Run.Style>
+                                <Style TargetType="Run">
+                                    <Setter Property="FontStyle" Value="Italic" />
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding Summary.IsResolutionOverride, Mode=OneWay}" Value="True">
+                                            <Setter Property="FontStyle" Value="Normal" />
+                                            <Setter Property="FontWeight" Value="SemiBold" />
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </Run.Style>
+                        </Run><Run Text=" &#x00B7; " /><Run Text="{Binding Summary.RefreshRate, Mode=OneWay}">
+                            <Run.Style>
+                                <Style TargetType="Run">
+                                    <Setter Property="FontStyle" Value="Italic" />
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding Summary.IsRefreshOverride, Mode=OneWay}" Value="True">
+                                            <Setter Property="FontStyle" Value="Normal" />
+                                            <Setter Property="FontWeight" Value="SemiBold" />
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </Run.Style>
+                        </Run></TextBlock>
+                    <ui:FontIcon
+                        VerticalAlignment="Center"
+                        FontSize="12"
+                        Glyph="{Binding ChevronGlyph, Mode=OneWay}" />
+                </ikw:SimpleStackPanel>
+            </ui:SettingsCard>
+
+            <ikw:SimpleStackPanel Visibility="{Binding ShowSettings, Mode=OneWay, Converter={StaticResource BooleanToVisibilityConverter}}">
+                <!--  mode row, then a value row only when overridden, like Framerate limit and FPS  -->
+                <ui:SettingsCard
+                    MinHeight="52"
+                    Padding="{DynamicResource SettingsExpanderItemPadding}"
+                    ui:ControlHelper.CornerRadius="0"
+                    BorderThickness="{DynamicResource SettingsExpanderItemBorderThickness}"
+                    Command="{Binding ToggleResolutionExpandedCommand}"
+                    Description="{Binding ResolutionHint, Mode=OneWay}"
+                    Header="{l:Static resx:Resources.QuickDevicePage_DisplayResolution}"
+                    IsActionIconVisible="False"
+                    IsClickEnabled="{Binding IsResolutionOverride, Mode=OneWay}">
+                    <!--  the chevron sits in the right padding, where a clickable row has its action icon, so the combo does not move  -->
+                    <StackPanel Orientation="Horizontal">
+                        <StackPanel.Style>
+                            <Style TargetType="StackPanel">
+                                <Setter Property="Margin" Value="0" />
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding IsResolutionOverride, Mode=OneWay}" Value="True">
+                                        <Setter Property="Margin" Value="0,0,-28,0" />
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </StackPanel.Style>
+                        <ComboBox
+                            MinWidth="140"
+                            DisplayMemberPath="Label"
+                            IsEnabled="{Binding IsResolutionModeEnabled, Mode=OneWay}"
+                            ItemsSource="{Binding DisplayModeOptions, Mode=OneWay}"
+                            SelectedValue="{Binding ResolutionMode, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                            SelectedValuePath="Mode" />
+                        <Border Width="28" Visibility="{Binding IsResolutionOverride, Mode=OneWay, Converter={StaticResource BooleanToVisibilityConverter}}">
+                            <ui:FontIcon
+                                HorizontalAlignment="Right"
+                                VerticalAlignment="Center"
+                                FontSize="12"
+                                Glyph="{Binding ResolutionChevronGlyph, Mode=OneWay}" />
+                        </Border>
+                    </StackPanel>
+                </ui:SettingsCard>
+
+                <ui:SettingsCard
+                    MinHeight="52"
+                    Padding="{DynamicResource SettingsExpanderItemPadding}"
+                    ui:ControlHelper.CornerRadius="0"
+                    BorderThickness="{DynamicResource SettingsExpanderItemBorderThickness}"
+                    Header="{l:Static resx:Resources.ProfilesPage_DisplayResolutionValue}"
+                    Visibility="{Binding ShowResolutionValue, Mode=OneWay, Converter={StaticResource BooleanToVisibilityConverter}}">
+                    <ComboBox
+                        MinWidth="140"
+                        DisplayMemberPath="Label"
+                        ItemsSource="{Binding Resolutions, Mode=OneWay}"
+                        SelectedValue="{Binding SelectedResolution, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                        SelectedValuePath="Key" />
+                </ui:SettingsCard>
+
+                <ui:SettingsCard
+                    MinHeight="52"
+                    Padding="{DynamicResource SettingsExpanderItemPadding}"
+                    ui:ControlHelper.CornerRadius="0"
+                    BorderThickness="{DynamicResource SettingsExpanderItemBorderThickness}"
+                    Command="{Binding ToggleRefreshExpandedCommand}"
+                    Description="{Binding RefreshHint, Mode=OneWay}"
+                    Header="{l:Static resx:Resources.QuickDevicePage_DisplayFrequency}"
+                    IsActionIconVisible="False"
+                    IsClickEnabled="{Binding IsRefreshOverride, Mode=OneWay}">
+                    <!--  the chevron sits in the right padding, where a clickable row has its action icon, so the combo does not move  -->
+                    <StackPanel Orientation="Horizontal">
+                        <StackPanel.Style>
+                            <Style TargetType="StackPanel">
+                                <Setter Property="Margin" Value="0" />
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding IsRefreshOverride, Mode=OneWay}" Value="True">
+                                        <Setter Property="Margin" Value="0,0,-28,0" />
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </StackPanel.Style>
+                        <ComboBox
+                            MinWidth="140"
+                            DisplayMemberPath="Label"
+                            ItemsSource="{Binding DisplayModeOptions, Mode=OneWay}"
+                            SelectedValue="{Binding RefreshMode, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                            SelectedValuePath="Mode" />
+                        <Border Width="28" Visibility="{Binding IsRefreshOverride, Mode=OneWay, Converter={StaticResource BooleanToVisibilityConverter}}">
+                            <ui:FontIcon
+                                HorizontalAlignment="Right"
+                                VerticalAlignment="Center"
+                                FontSize="12"
+                                Glyph="{Binding RefreshChevronGlyph, Mode=OneWay}" />
+                        </Border>
+                    </StackPanel>
+                </ui:SettingsCard>
+
+                <ui:SettingsCard
+                    MinHeight="52"
+                    Padding="{DynamicResource SettingsExpanderItemPadding}"
+                    ui:ControlHelper.CornerRadius="0"
+                    BorderThickness="{DynamicResource SettingsExpanderItemBorderThickness}"
+                    Header="{l:Static resx:Resources.ProfilesPage_DisplayRefreshRateValue}"
+                    Visibility="{Binding ShowRefreshValue, Mode=OneWay, Converter={StaticResource BooleanToVisibilityConverter}}">
+                    <ComboBox
+                        MinWidth="140"
+                        DisplayMemberPath="Label"
+                        ItemsSource="{Binding RefreshRates, Mode=OneWay}"
+                        SelectedValue="{Binding SelectedRefreshRate, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                        SelectedValuePath="Frequency" />
+                </ui:SettingsCard>
+            </ikw:SimpleStackPanel>
+        </ikw:SimpleStackPanel>
     </DataTemplate>
 </ResourceDictionary>

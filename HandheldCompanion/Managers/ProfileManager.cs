@@ -764,6 +764,43 @@ public class ProfileManager : IManager
         }
     }
 
+    /// <summary>
+    /// Removes a forgotten monitor from every profile: its display mode overrides (both power states) and LastMonitorId.
+    /// Affected profiles are saved without being re-applied. Returns the number of profiles changed.
+    /// </summary>
+    public int RemoveMonitorReferences(Guid monitorId)
+    {
+        int count = 0;
+
+        foreach (Profile profile in GetProfiles(true))
+        {
+            bool changed = false;
+            lock (profile.SyncRoot)
+            {
+                foreach (PerformanceOverrides overrides in profile.PerformanceOverrides.Values)
+                {
+                    if (overrides?.DisplayModes is not null && overrides.DisplayModes.Remove(monitorId))
+                        changed = true;
+                }
+
+                if (profile.LastMonitorId == monitorId)
+                {
+                    profile.LastMonitorId = Guid.Empty;
+                    changed = true;
+                }
+            }
+
+            if (!changed)
+                continue;
+
+            SerializeProfile(profile);
+            Updated?.Invoke(profile, UpdateSource.Background, IsCurrentProfile(profile));
+            count++;
+        }
+
+        return count;
+    }
+
     private void ProcessProfile(string fileName, bool imported = false)
     {
         Profile? profile;
@@ -1122,6 +1159,21 @@ public class ProfileManager : IManager
         FileUtils.FileDelete(profilePath);
     }
 
+    /// <summary>
+    /// Remembers the monitor a game window was last active on. Saved without re-applying the profile.
+    /// </summary>
+    public void SetLastMonitor(Profile profile, Guid monitorId)
+    {
+        if (profile.Default || monitorId == Guid.Empty || profile.LastMonitorId == monitorId)
+            return;
+
+        profile.LastMonitorId = monitorId;
+        LogManager.LogDebug("Profile {0} last monitor set to {1}", profile.Name, monitorId);
+
+        SerializeProfile(profile);
+        LastMonitorChanged?.Invoke(profile);
+    }
+
     public void SerializeProfile(Profile profile)
     {
         // prepare for writing
@@ -1411,6 +1463,9 @@ public class ProfileManager : IManager
 
     public event AppliedEventHandler? Applied;
     public delegate void AppliedEventHandler(Profile profile, UpdateSource source);
+
+    public event LastMonitorChangedEventHandler? LastMonitorChanged;
+    public delegate void LastMonitorChangedEventHandler(Profile profile);
 
     public event DiscardedEventHandler? Discarded;
     public delegate void DiscardedEventHandler(Profile profile, bool swapped, Profile nextProfile);

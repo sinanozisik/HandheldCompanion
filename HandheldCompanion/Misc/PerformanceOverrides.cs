@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Runtime.Serialization;
 
 namespace HandheldCompanion.Misc
@@ -8,12 +9,16 @@ namespace HandheldCompanion.Misc
     /// Inherit means the setting is resolved from the default game profile,
     /// then from the power profile selected for the same power state.
     /// Override applies FramerateValue, where 0 means no limit.
+    /// DisplayModes holds resolution and refresh rate overrides per known monitor (key: KnownMonitor.Id).
+    /// A monitor without an entry inherits; display modes have no power profile layer.
     /// </summary>
     [Serializable]
     public class PerformanceOverrides
     {
         public FramerateLimitMode FramerateMode { get; set; } = FramerateLimitMode.Inherit;
         public int FramerateValue { get; set; } = 0;
+
+        public Dictionary<Guid, DisplayModeOverride> DisplayModes { get; set; } = new();
 
         [OnDeserialized]
         private void OnDeserialized(StreamingContext context)
@@ -23,6 +28,7 @@ namespace HandheldCompanion.Misc
                 FramerateValue = 0;
 
             FramerateMode = FramerateMode.Normalize();
+            DisplayModes ??= new();
         }
     }
 }
