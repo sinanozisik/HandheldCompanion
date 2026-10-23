@@ -149,10 +149,6 @@ namespace HandheldCompanion.ViewModels
                     // update variable
                     _selectedPreset = value;
 
-                    // lazy migration: pin the legacy framerate behavior, persisted on the next save
-                    if (_selectedPreset is not null && _selectedPreset.FramerateMode is null)
-                        _selectedPreset.SetFramerateMode(_selectedPreset.GetFramerateMode());
-
                     _customFrameLimitValue = null;
                     IsCustomFrameLimitSelected = ShouldUseCustomFrameLimit(_selectedPreset.FramerateValue);
                     if (IsCustomFrameLimitSelected)
@@ -497,28 +493,19 @@ namespace HandheldCompanion.ViewModels
             return Math.Clamp(value, FrameLimitMinimum, Math.Max(FrameLimitMinimum, FrameLimitMaximum));
         }
 
-        public IReadOnlyList<FramerateModeOption> FramerateModeOptions { get; } =
-        [
-            new(FramerateLimitMode.Inherit, Resources.OverrideMode_UseRTSSLimit),
-            new(FramerateLimitMode.Override, Resources.OverrideMode_Override),
-        ];
-
-        public FramerateModeOption? SelectedFramerateMode
+        public bool FramerateLimitEnabled
         {
-            get => SelectedPreset is null ? null : FramerateModeOptions.FirstOrDefault(o => o.Mode == SelectedPreset.GetFramerateMode());
+            get => SelectedPreset.FramerateLimitEnabled ?? SelectedPreset.FramerateValue != 0;
             set
             {
-                if (value is null || SelectedPreset is null || value.Mode == SelectedPreset.GetFramerateMode())
+                if (value == FramerateLimitEnabled)
                     return;
 
-                SelectedPreset.SetFramerateMode(value.Mode);
-                OnPropertyChanged(nameof(SelectedFramerateMode));
+                SelectedPreset.FramerateLimitEnabled = value;
                 OnPropertyChanged(nameof(FramerateLimitEnabled));
                 SubmitSelectedPreset();
             }
         }
-
-        public bool FramerateLimitEnabled => SelectedPreset?.GetFramerateMode() == FramerateLimitMode.Override;
 
         private bool _isCustomFrameLimitSelected;
         public bool IsCustomFrameLimitSelected
@@ -1019,7 +1006,6 @@ namespace HandheldCompanion.ViewModels
             // Framerate limiter UI state
             nameof(FramerateLimits),
             nameof(FramerateLimitEnabled),
-            nameof(SelectedFramerateMode),
             nameof(SelectedFrameLimit),
             nameof(IsCustomFrameLimitSelected),
             nameof(CustomFrameLimitValue),

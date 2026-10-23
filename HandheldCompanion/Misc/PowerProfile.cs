@@ -1,7 +1,6 @@
 ﻿using HandheldCompanion.Managers;
 using HandheldCompanion.Utils;
 using System;
-using System.Runtime.Serialization;
 
 namespace HandheldCompanion.Misc
 {
@@ -31,40 +30,6 @@ namespace HandheldCompanion.Misc
         public float AutoTDPRequestedFPS { get; set; } = 30.0f;
         public bool? FramerateLimitEnabled { get; set; }
         public int FramerateValue { get; set; } = 0; // default RTSS value
-
-        // null on power profiles saved before FramerateLimitMode existed, see GetFramerateMode()
-        public FramerateLimitMode? FramerateMode { get; set; }
-
-        /// <summary>
-        /// Inherit leaves RTSS alone, Override writes FramerateValue to RTSS (0 = no limit).
-        /// </summary>
-        public FramerateLimitMode GetFramerateMode()
-        {
-            if (FramerateMode.HasValue)
-                return FramerateMode.Value.Normalize();
-
-            // legacy: a disabled limiter never touched RTSS, an enabled one always wrote its value, 0 included
-            return (FramerateLimitEnabled ?? FramerateValue != 0) ? FramerateLimitMode.Override : FramerateLimitMode.Inherit;
-        }
-
-        public void SetFramerateMode(FramerateLimitMode mode)
-        {
-            FramerateMode = mode.Normalize();
-
-            // keep the legacy flag meaningful for older versions
-            FramerateLimitEnabled = FramerateMode == FramerateLimitMode.Override;
-        }
-
-        [OnDeserialized]
-        private void OnFramerateDeserialized(StreamingContext context)
-        {
-            // early builds stored NoLimit as its own mode
-            if (FramerateMode.HasValue && FramerateMode.Value.IsLegacyNoLimit())
-            {
-                FramerateValue = 0;
-                FramerateMode = FramerateLimitMode.Override;
-            }
-        }
 
         public bool EPPOverrideEnabled { get; set; }
         public uint EPPOverrideValue { get; set; } = 50;
