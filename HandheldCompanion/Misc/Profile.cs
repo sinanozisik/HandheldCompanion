@@ -153,6 +153,9 @@ public partial class Profile : ICloneable, IComparable, INotifyPropertyChanged
     public DateTime DateModified { get; set; } = DateTime.MinValue;
     public DateTime LastUsed { get; set; } = DateTime.MinValue;
 
+    // KnownMonitor.Id of the monitor the game window was last active on, drives the framerate presets
+    public Guid LastMonitorId { get; set; } = Guid.Empty;
+
     // Library
     public LibraryEntry? LibraryEntry { get; set; }
     public bool ShowInLibrary { get; set; } = true;

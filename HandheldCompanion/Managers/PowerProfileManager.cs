@@ -504,6 +504,56 @@ namespace HandheldCompanion.Managers
             return mode == FramerateLimitMode.Override;
         }
 
+        /// <summary>
+        /// Resolves the display mode of one monitor for a game profile and power state.
+        /// Resolution and refresh rate are resolved independently; the first layer set to Override wins:
+        /// game profile, then default game profile. There is no power profile layer, Inherit on every layer means no change.
+        /// </summary>
+        public ResolvedDisplayMode ResolveDisplayMode(Profile? gameProfile, int powerLineStatus, Guid monitorId)
+        {
+            (Profile? Layer, DisplayModeSource Source)[] layers =
+            [
+                (gameProfile, DisplayModeSource.GameProfile),
+                (ManagerFactory.profileManager.GetDefault(), DisplayModeSource.DefaultProfile),
+            ];
+
+            ResolvedDisplayMode resolved = default;
+
+            foreach ((Profile? layer, DisplayModeSource source) in layers)
+            {
+                if (layer?.PerformanceOverrides is null)
+                    continue;
+
+                if (!layer.PerformanceOverrides.TryGetValue(powerLineStatus, out PerformanceOverrides? overrides)
+                    || overrides?.DisplayModes is null
+                    || !overrides.DisplayModes.TryGetValue(monitorId, out DisplayModeOverride? displayMode)
+                    || displayMode is null)
+                    continue;
+
+                if (resolved.ResolutionSource == DisplayModeSource.None && displayMode.HasResolution)
+                    resolved = resolved with { Width = displayMode.Width, Height = displayMode.Height, ResolutionSource = source };
+
+                if (resolved.RefreshSource == DisplayModeSource.None && displayMode.HasRefreshRate)
+                    resolved = resolved with { RefreshRate = displayMode.RefreshRate, RefreshSource = source };
+            }
+
+            return resolved;
+        }
+
+        /// <summary>
+        /// Returns the game profile and power state the current power profile was applied for.
+        /// </summary>
+        public bool GetCurrentGameProfile(out Profile? gameProfile, out int powerLineStatus)
+        {
+            lock (profileLock)
+            {
+                gameProfile = currentGameProfile;
+                powerLineStatus = currentPowerLineStatus;
+            }
+
+            return gameProfile is not null;
+        }
+
         public void SetStreamingPowerOverride(bool enabled)
         {
             lock (profileLock)

@@ -26,8 +26,34 @@ namespace HandheldCompanion.ViewModels.Misc
             return limits;
         }
 
+        /// <summary>
+        /// Builds the framerate limit choices for a refresh rate: its presets, Disabled (0) first, followed by Custom.
+        /// A refresh rate of 0 or less (not known yet) lists Disabled and Custom, so no limit stays selectable.
+        /// </summary>
+        public static List<ScreenFramelimitViewModel> BuildList(int frequency)
+        {
+            List<ScreenFramelimitViewModel> limits = [];
+
+            if (frequency > 0)
+            {
+                foreach (ScreenFramelimit frameLimit in DesktopScreen.GetFramelimits(frequency))
+                    limits.Add(new ScreenFramelimitViewModel(frameLimit));
+            }
+            else
+            {
+                limits.Add(new ScreenFramelimitViewModel(new ScreenFramelimit(0, 0)));
+            }
+
+            limits.Add(new ScreenFramelimitViewModel(new ScreenFramelimit(-1, 0), Resources.Enum_InputsHotkeyType_Custom, true));
+            return limits;
+        }
+
         public ScreenFramelimit FrameLimit { get; }
         public bool IsCustom { get; }
+
+        // value identity of an entry, stable when the list is rebuilt: the limit, -1 for Custom
+        public const int CustomKey = -1;
+        public int SelectionKey => IsCustom ? CustomKey : FrameLimit.limit;
 
         private readonly string? _displayName;
 
