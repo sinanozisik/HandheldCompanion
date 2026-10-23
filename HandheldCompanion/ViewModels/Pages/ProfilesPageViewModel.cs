@@ -2449,12 +2449,12 @@ namespace HandheldCompanion.ViewModels
         /// </summary>
         public sealed record DisplayModeSummary(string Resolution, bool IsResolutionOverride, string RefreshRate, bool IsRefreshOverride);
 
-        // inherited values: default game profile, otherwise the mode the monitor had before HC changed it
+        // inherited values: default game profile, otherwise the system display mode
         private DisplayModeSummary GetDisplayModeSummary(int slot, DisplayMonitorOption monitor)
         {
             DisplayModeOverride? displayMode = GetDisplayModeOverride(slot, monitor, false);
             ResolvedDisplayMode resolved = ResolveDisplayMode(slot, monitor);
-            (int baseWidth, int baseHeight, int baseFrequency) = ManagerFactory.multimediaManager.GetBaselineMode(
+            (int systemWidth, int systemHeight, int systemFrequency) = ManagerFactory.multimediaManager.GetSystemDisplayMode(
                 monitor.Id, monitor.CurrentWidth, monitor.CurrentHeight, monitor.CurrentFrequency);
 
             bool locked = IsResolutionLocked(monitor);
@@ -2468,7 +2468,7 @@ namespace HandheldCompanion.ViewModels
             else if (resolved.HasResolution)
                 (width, height) = (resolved.Width, resolved.Height);
             else
-                (width, height) = (baseWidth, baseHeight);
+                (width, height) = (systemWidth, systemHeight);
 
             bool refreshOverride = displayMode?.RefreshMode == DisplayOverrideMode.Override && displayMode.RefreshRate > 0;
 
@@ -2478,7 +2478,7 @@ namespace HandheldCompanion.ViewModels
             else
             {
                 // the apply path rounds to a rate the resolution offers
-                int inherited = resolved.HasRefreshRate ? resolved.RefreshRate : baseFrequency;
+                int inherited = resolved.HasRefreshRate ? resolved.RefreshRate : systemFrequency;
                 frequency = SnapRefreshRate(FindResolution(monitor, width, height)?.RefreshRates ?? [], inherited);
             }
 

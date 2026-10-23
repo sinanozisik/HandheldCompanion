@@ -122,6 +122,7 @@ public class DesktopScreen : IDisposable
 
     public string ModelKey => MonitorIdentity.GetModelKey(EdidManufacturer, EdidProductCode);
     public string SerialKey => MonitorIdentity.GetSerialKey(EdidManufacturer, EdidProductCode, EdidSerialNumber, EdidSerialString);
+    public string SerialTextKey => MonitorIdentity.GetSerialTextKey(EdidManufacturer, EdidProductCode, EdidSerialNumber, EdidSerialString);
 
     public bool IsPrimary => screen?.Primary ?? false;
     public bool IsSecondary => !IsPrimary;
