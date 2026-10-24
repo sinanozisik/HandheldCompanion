@@ -120,6 +120,7 @@ namespace HandheldCompanion.Managers
             // manage events
             ManagerFactory.profileManager.Applied += ProfileManager_Applied;
             ManagerFactory.profileManager.Discarded += ProfileManager_Discarded;
+            ManagerFactory.profileManager.Updated += ProfileManager_Updated;
 
             ProfileManager_Applied(ManagerFactory.profileManager.GetCurrent(), UpdateSource.Background);
         }
@@ -155,6 +156,7 @@ namespace HandheldCompanion.Managers
             PlatformManager.LibreHardware.CPUTemperatureChanged -= LibreHardwareMonitor_CpuTemperatureChanged;
             ManagerFactory.profileManager.Applied -= ProfileManager_Applied;
             ManagerFactory.profileManager.Discarded -= ProfileManager_Discarded;
+            ManagerFactory.profileManager.Updated -= ProfileManager_Updated;
             ManagerFactory.profileManager.Initialized -= ProfileManager_Initialized;
             SystemManager.Initialized -= SystemManager_Initialized;
             SystemManager.PowerLineStatusChanged -= SystemManager_PowerLineStatusChanged;
@@ -249,22 +251,47 @@ namespace HandheldCompanion.Managers
 
                 // Get the power profile
                 int powerLineStatus = streamingPowerOverride ? (int)PowerLineStatus.Offline : (int)powerStatus.PowerLineStatus;
-                PowerProfile powerProfile = GetProfile(profile.PowerProfiles[powerLineStatus]);
-                if (powerProfile is null)
-                    return;
 
-                // update current profile
-                currentProfile = powerProfile;
+                // the per power state overrides follow the game profile and power state, with or without a power profile
                 currentGameProfile = profile;
                 currentPowerLineStatus = powerLineStatus;
 
-                // apply device-specific power profile behavior before other subscribers
-                IDevice.GetCurrent().PowerProfileManager_Applied(powerProfile, source);
+                PowerProfile powerProfile = GetProfile(profile.PowerProfiles[powerLineStatus]);
+                if (powerProfile is not null)
+                {
+                    // update current profile
+                    currentProfile = powerProfile;
 
-                Applied?.Invoke(powerProfile, source);
+                    // apply device-specific power profile behavior before other subscribers
+                    IDevice.GetCurrent().PowerProfileManager_Applied(powerProfile, source);
 
-                LogManager.LogInformation("Power profile {0} applied", powerProfile.Name);
+                    Applied?.Invoke(powerProfile, source);
+
+                    LogManager.LogInformation("Power profile {0} applied", powerProfile.Name);
+                }
+
+                OverridesApplied?.Invoke(profile, powerLineStatus, source);
             }
+        }
+
+        private void ProfileManager_Updated(Profile profile, UpdateSource source, bool isCurrent)
+        {
+            // the default profile is a layer of the current game profile overrides, a current profile is applied again anyway
+            if (!profile.Default || isCurrent || source == UpdateSource.Serializer)
+                return;
+
+            Profile? gameProfile;
+            int powerLineStatus;
+            lock (profileLock)
+            {
+                gameProfile = currentGameProfile;
+                powerLineStatus = currentPowerLineStatus;
+            }
+
+            if (gameProfile is null)
+                return;
+
+            OverridesApplied?.Invoke(gameProfile, powerLineStatus, source);
         }
 
         private void ProfileManager_Discarded(Profile profile, bool swapped, Profile nextProfile)
@@ -544,7 +571,66 @@ namespace HandheldCompanion.Managers
         }
 
         /// <summary>
-        /// Returns the game profile and power state the current power profile was applied for.
+        /// Resolves the graphics groups for a game profile and power state.
+        /// Each group is resolved on its own; the first layer set to Override wins: game profile, then default game profile.
+        /// There is no power profile layer, the default game profile overrides every group.
+        /// </summary>
+        public ResolvedGraphics ResolveGraphics(Profile? gameProfile, int powerLineStatus)
+        {
+            GraphicsOverrides? game = GetGraphicsOverrides(gameProfile, powerLineStatus);
+            GraphicsOverrides? fallback = GetGraphicsOverrides(ManagerFactory.profileManager.GetDefault(), powerLineStatus);
+
+            return new(
+                ResolveGraphicsGroup(game?.Scaling, fallback?.Scaling),
+                ResolveGraphicsGroup(game?.RSR, fallback?.RSR),
+                ResolveGraphicsGroup(game?.IntegerScaling, fallback?.IntegerScaling),
+                ResolveGraphicsGroup(game?.RIS, fallback?.RIS),
+                ResolveGraphicsGroup(game?.AFMF, fallback?.AFMF));
+        }
+
+        /// <summary>
+        /// Resolves the graphics groups for the current game profile and power state, every group is unset before the first apply.
+        /// </summary>
+        public ResolvedGraphics GetGraphics()
+        {
+            Profile? gameProfile;
+            int powerLineStatus;
+            lock (profileLock)
+            {
+                gameProfile = currentGameProfile;
+                powerLineStatus = currentPowerLineStatus;
+            }
+
+            // nothing applied yet, nothing to enforce
+            if (gameProfile is null)
+                return default;
+
+            return ResolveGraphics(gameProfile, powerLineStatus);
+        }
+
+        private static GraphicsOverrides? GetGraphicsOverrides(Profile? profile, int powerLineStatus)
+        {
+            if (profile?.PerformanceOverrides is null
+                || !profile.PerformanceOverrides.TryGetValue(powerLineStatus, out PerformanceOverrides? overrides)
+                || overrides is null)
+                return null;
+
+            return overrides.Graphics;
+        }
+
+        private static ResolvedGraphicsGroup<T> ResolveGraphicsGroup<T>(T? game, T? fallback) where T : GraphicsGroupOverride
+        {
+            if (game is not null && game.IsOverride)
+                return new(game, GraphicsSource.GameProfile);
+
+            if (fallback is not null && fallback.IsOverride)
+                return new(fallback, GraphicsSource.DefaultProfile);
+
+            return default;
+        }
+
+        /// <summary>
+        /// Returns the game profile and power state the current overrides were applied for.
         /// </summary>
         public bool GetCurrentGameProfile(out Profile? gameProfile, out int powerLineStatus)
         {
@@ -653,6 +739,11 @@ namespace HandheldCompanion.Managers
 
         public event DiscardedEventHandler? Discarded;
         public delegate void DiscardedEventHandler(PowerProfile profile, bool swapped);
+
+        // the game profile or power state the per power state overrides resolve against was applied,
+        // or the default profile layer changed; raised with or without a power profile
+        public event OverridesAppliedEventHandler? OverridesApplied;
+        public delegate void OverridesAppliedEventHandler(Profile gameProfile, int powerLineStatus, UpdateSource source);
         #endregion
     }
 }

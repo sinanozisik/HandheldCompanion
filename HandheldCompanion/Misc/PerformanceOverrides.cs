@@ -11,6 +11,7 @@ namespace HandheldCompanion.Misc
     /// Override applies FramerateValue, where 0 means no limit.
     /// DisplayModes holds resolution and refresh rate overrides per known monitor (key: KnownMonitor.Id).
     /// A monitor without an entry inherits; display modes have no power profile layer.
+    /// Graphics holds the graphics groups, each resolved on its own; graphics have no power profile layer either.
     /// </summary>
     [Serializable]
     public class PerformanceOverrides
@@ -19,6 +20,8 @@ namespace HandheldCompanion.Misc
         public int FramerateValue { get; set; } = 0;
 
         public Dictionary<Guid, DisplayModeOverride> DisplayModes { get; set; } = new();
+
+        public GraphicsOverrides Graphics { get; set; } = new();
 
         [OnDeserialized]
         private void OnDeserialized(StreamingContext context)
@@ -29,6 +32,7 @@ namespace HandheldCompanion.Misc
 
             FramerateMode = FramerateMode.Normalize();
             DisplayModes ??= new();
+            Graphics ??= new();
         }
     }
 }

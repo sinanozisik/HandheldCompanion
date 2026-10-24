@@ -241,28 +241,13 @@ public partial class Profile : ICloneable, IComparable, INotifyPropertyChanged
         { 1 /*PowerLineStatus.Online*/, Guid.Empty },
     };
 
-    // Optional per power-state overrides, same keys as PowerProfiles.
+    // Optional per power-state overrides (framerate, display modes, graphics), same keys as PowerProfiles.
     // Inherit means the next layer decides, Override applies this profile's own value. A missing entry reads as Inherit.
     public Dictionary<int, PerformanceOverrides> PerformanceOverrides { get; set; } = new()
     {
         { 0 /*PowerLineStatus.Offline*/, new() },
         { 1 /*PowerLineStatus.Online*/, new() },
     };
-
-    public bool GPUScaling { get; set; }
-    public int ScalingMode { get; set; } = 0; // default AMD value
-    public bool RSREnabled { get; set; }
-    public int RSRSharpness { get; set; } = 20; // default AMD value
-    public bool IntegerScalingEnabled { get; set; }
-    public int IntegerScalingDivider { get; set; } = 1;
-    public byte IntegerScalingType { get; set; } = 0;
-    public bool RISEnabled { get; set; }
-    public int RISSharpness { get; set; } = 80; // default AMD value
-    public bool AFMFEnabled { get; set; }
-    public int AFMFAlgorithm { get; set; } = 0;          // AFMF_ALGORITHM_AUTO
-    public int AFMFSearchMode { get; set; } = 0;          // AFMF_SEARCH_MODE_AUTO
-    public int AFMFPerformanceMode { get; set; } = 0;     // AFMF_PERFORMANCE_MODE_AUTO
-    public int AFMFFastMotionResponse { get; set; } = 0;  // AFMF_RESP_REPEAT_FRAMES
 
     // AppCompatFlags
     public bool FullScreenOptimization { get; set; } = true;

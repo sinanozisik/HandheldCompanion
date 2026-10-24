@@ -33,6 +33,7 @@ public class ProfileManager : IManager
     private static readonly Version DictionaryMigrationVersion = new("0.27.0.7");
     private static readonly Version ButtonFlagsMigrationVersion = new("0.27.0.13");
     private static readonly Version PowerProfileMigrationVersion = new("0.21.5.4");
+    private static readonly Version GraphicsSlotMigrationVersion = new("1.3.3.1");
     private readonly ProfileCollectionHelper collectionHelper = new();
 
     public event Action<GameCollection>? CollectionAdded;
@@ -119,6 +120,9 @@ public class ProfileManager : IManager
                 Layout = defaultLayout,
                 LayoutTitle = LayoutTemplate.DefaultLayout.Name,
             };
+
+            // a new default profile starts with every graphics group off
+            NormalizeDefaultGraphics(defaultProfile);
 
             UpdateOrCreateProfile(defaultProfile, UpdateSource.Creation);
         }
@@ -805,6 +809,7 @@ public class ProfileManager : IManager
     {
         Profile? profile;
         UpdateSource updateSource = UpdateSource.Serializer;
+        bool graphicsMigrated = false;
 
         try
         {
@@ -934,6 +939,14 @@ public class ProfileManager : IManager
                     }
                 }
             }
+            if (version <= GraphicsSlotMigrationVersion)
+            {
+                // the legacy graphics keys only exist in the file, the profile no longer has them
+                JObject legacy = JObject.Parse(json ?? File.ReadAllText(fileName), new JsonLoadSettings { LineInfoHandling = LineInfoHandling.Ignore });
+                graphicsMigrated = MigrateGraphicsSlots(profile, legacy);
+            }
+
+            graphicsMigrated |= NormalizeDefaultGraphics(profile);
 
             // hacky, fix broken profiles with Turbo and Toggle enabled across all actions
             // the elements inside (IActions instances) are the same references as the ones stored in profile.Layout.ButtonLayout
@@ -1065,9 +1078,123 @@ public class ProfileManager : IManager
 
         UpdateOrCreateProfile(profile, updateSource);
 
+        // loaded profiles aren't saved, write the migrated graphics so the legacy keys are read and the default normalized only once
+        if (graphicsMigrated && updateSource == UpdateSource.Serializer)
+            SerializeProfile(profile);
+
         // default specific
         if (profile.Default)
             ApplyProfile(profile, updateSource);
+    }
+
+    private static readonly string[] LegacyGraphicsKeys =
+    [
+        "GPUScaling", "ScalingMode",
+        "RSREnabled", "RSRSharpness",
+        "IntegerScalingEnabled", "IntegerScalingDivider", "IntegerScalingType",
+        "RISEnabled", "RISSharpness",
+        "AFMFEnabled", "AFMFAlgorithm", "AFMFSearchMode", "AFMFPerformanceMode", "AFMFFastMotionResponse",
+    ];
+
+    /// <summary>
+    /// Moves the graphics settings of a profile saved before they were set per power state into both power states.
+    /// Every group becomes an override, off values included, so the profile keeps applying what it applied before.
+    /// Returns false when the file has no legacy graphics key (already migrated).
+    /// </summary>
+    private static bool MigrateGraphicsSlots(Profile profile, JObject jObject)
+    {
+        if (!LegacyGraphicsKeys.Any(jObject.ContainsKey))
+            return false;
+
+        // a missing key reads as the default value of the old field
+        bool GetBool(string key, bool fallback) =>
+            jObject.TryGetValue(key, out JToken? token) && token.Type == JTokenType.Boolean ? token.Value<bool>() : fallback;
+        int GetInt(string key, int fallback) =>
+            jObject.TryGetValue(key, out JToken? token) && token.Type == JTokenType.Integer ? token.Value<int>() : fallback;
+
+        profile.PerformanceOverrides ??= new();
+        foreach (int slot in new[] { (int)PowerLineStatus.Offline, (int)PowerLineStatus.Online })
+        {
+            if (!profile.PerformanceOverrides.TryGetValue(slot, out PerformanceOverrides? overrides) || overrides is null)
+                profile.PerformanceOverrides[slot] = overrides = new();
+
+            overrides.Graphics = new()
+            {
+                Scaling = new()
+                {
+                    Mode = GraphicsOverrideMode.Override,
+                    Enabled = GetBool("GPUScaling", false),
+                    ScalingMode = GetInt("ScalingMode", 0),
+                },
+                RSR = new()
+                {
+                    Mode = GraphicsOverrideMode.Override,
+                    Enabled = GetBool("RSREnabled", false),
+                    Sharpness = GetInt("RSRSharpness", 20),
+                },
+                IntegerScaling = new()
+                {
+                    Mode = GraphicsOverrideMode.Override,
+                    Enabled = GetBool("IntegerScalingEnabled", false),
+                    Divider = GetInt("IntegerScalingDivider", 1),
+                    Type = (byte)GetInt("IntegerScalingType", 0),
+                },
+                RIS = new()
+                {
+                    Mode = GraphicsOverrideMode.Override,
+                    Enabled = GetBool("RISEnabled", false),
+                    Sharpness = GetInt("RISSharpness", 80),
+                },
+                AFMF = new()
+                {
+                    Mode = GraphicsOverrideMode.Override,
+                    Enabled = GetBool("AFMFEnabled", false),
+                    Algorithm = GetInt("AFMFAlgorithm", 0),
+                    SearchMode = GetInt("AFMFSearchMode", 0),
+                    PerformanceMode = GetInt("AFMFPerformanceMode", 0),
+                    FastMotionResponse = GetInt("AFMFFastMotionResponse", 0),
+                },
+            };
+        }
+
+        LogManager.LogInformation("Moved graphics settings of profile {0} to both power states", profile.Name);
+        return true;
+    }
+
+    /// <summary>
+    /// The default profile is the graphics baseline: both power states exist and every group applies its stored values.
+    /// Returns true when the profile was changed.
+    /// </summary>
+    private static bool NormalizeDefaultGraphics(Profile profile)
+    {
+        if (!profile.Default)
+            return false;
+
+        bool changed = false;
+        profile.PerformanceOverrides ??= new();
+        foreach (int slot in new[] { (int)PowerLineStatus.Offline, (int)PowerLineStatus.Online })
+        {
+            if (!profile.PerformanceOverrides.TryGetValue(slot, out PerformanceOverrides? overrides) || overrides is null)
+            {
+                profile.PerformanceOverrides[slot] = overrides = new();
+                changed = true;
+            }
+
+            GraphicsOverrides graphics = overrides.Graphics ??= new();
+            foreach (GraphicsGroupOverride group in new GraphicsGroupOverride[] { graphics.Scaling, graphics.RSR, graphics.IntegerScaling, graphics.RIS, graphics.AFMF })
+            {
+                if (group.IsOverride)
+                    continue;
+
+                group.Mode = GraphicsOverrideMode.Override;
+                changed = true;
+            }
+        }
+
+        if (changed)
+            LogManager.LogInformation("Set every graphics group of default profile {0} to apply its values", profile.Name);
+
+        return changed;
     }
 
     private static Version GetProfileVersion(string fileName)
@@ -1335,15 +1462,28 @@ public class ProfileManager : IManager
             }
 
             // get default power profiles
-            if (profile.PowerProfiles[(int)PowerLineStatus.Offline] == Guid.Empty)
+            if (profile.Default)
             {
-                PowerProfile? betterPeformanceProfile = IDevice.GetCurrent().DevicePowerProfiles.FirstOrDefault(p => p.Guid == IDevice.BetterPerformanceGuid);
-                profile.PowerProfiles[(int)PowerLineStatus.Offline] = betterPeformanceProfile?.Guid ?? Guid.Empty;
+                if (profile.PowerProfiles[(int)PowerLineStatus.Offline] == Guid.Empty)
+                {
+                    PowerProfile? betterPeformanceProfile = IDevice.GetCurrent().DevicePowerProfiles.FirstOrDefault(p => p.Guid == IDevice.BetterPerformanceGuid);
+                    profile.PowerProfiles[(int)PowerLineStatus.Offline] = betterPeformanceProfile?.Guid ?? Guid.Empty;
+                }
+                if (profile.PowerProfiles[(int)PowerLineStatus.Online] == Guid.Empty)
+                {
+                    PowerProfile? bestPeformanceProfile = IDevice.GetCurrent().DevicePowerProfiles.FirstOrDefault(p => p.Guid == IDevice.BestPerformanceGuid);
+                    profile.PowerProfiles[(int)PowerLineStatus.Online] = bestPeformanceProfile?.Guid ?? Guid.Empty;
+                }
             }
-            if (profile.PowerProfiles[(int)PowerLineStatus.Online] == Guid.Empty)
+            else
             {
-                PowerProfile? bestPeformanceProfile = IDevice.GetCurrent().DevicePowerProfiles.FirstOrDefault(p => p.Guid == IDevice.BestPerformanceGuid);
-                profile.PowerProfiles[(int)PowerLineStatus.Online] = bestPeformanceProfile?.Guid ?? Guid.Empty;
+                // a new game profile starts with the power profiles of the default profile, copied once
+                Profile defaultProfile = GetDefault();
+                foreach (int slot in new[] { (int)PowerLineStatus.Offline, (int)PowerLineStatus.Online })
+                {
+                    if (profile.PowerProfiles[slot] == Guid.Empty && defaultProfile.PowerProfiles.TryGetValue(slot, out Guid powerProfile))
+                        profile.PowerProfiles[slot] = powerProfile;
+                }
             }
         }
 

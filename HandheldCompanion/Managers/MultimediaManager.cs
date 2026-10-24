@@ -110,7 +110,7 @@ public class MultimediaManager : IManager
         // System display modes left by a session that didn't stop, checked against the connected monitors
         LoadSystemDisplayModes();
 
-        // Profile display modes follow the applied power profile (profile activation and power state changes)
+        // Profile display modes follow the applied overrides (profile activation, power state and default profile changes)
         switch (ManagerFactory.powerProfileManager.Status)
         {
             default:
@@ -136,11 +136,11 @@ public class MultimediaManager : IManager
 
     private void QueryPowerProfile()
     {
-        ManagerFactory.powerProfileManager.Applied += PowerProfileManager_Applied;
+        ManagerFactory.powerProfileManager.OverridesApplied += PowerProfileManager_OverridesApplied;
         QueueProfileDisplayModes();
     }
 
-    private void PowerProfileManager_Applied(PowerProfile profile, UpdateSource source)
+    private void PowerProfileManager_OverridesApplied(Profile gameProfile, int powerLineStatus, UpdateSource source)
     {
         QueueProfileDisplayModes();
     }
@@ -166,7 +166,7 @@ public class MultimediaManager : IManager
         // Unsubscribe from events
         SystemEvents.DisplaySettingsChanged -= SystemEvents_DisplaySettingsChanged;
         ManagerFactory.powerProfileManager.Initialized -= PowerProfileManager_Initialized;
-        ManagerFactory.powerProfileManager.Applied -= PowerProfileManager_Applied;
+        ManagerFactory.powerProfileManager.OverridesApplied -= PowerProfileManager_OverridesApplied;
         ManagerFactory.processManager.ForegroundChanged -= ProcessManager_ForegroundChanged;
         ManagerFactory.profileManager.Applied -= ProfileManager_Applied;
 
@@ -858,17 +858,30 @@ public class MultimediaManager : IManager
         public bool HasAppliedMode => AppliedFrequency != 0;
     }
 
-    private sealed record DisplayTarget(Guid Id, string DeviceName, string Name, bool IsPrimary, List<ScreenResolution> Resolutions);
+    private sealed record DisplayTarget(Guid Id, string DeviceName, string Name, bool IsPrimary, List<ScreenResolution> Resolutions, List<ScreenDivider> Dividers);
 
-    private sealed record EnforcedDisplayMode(Guid ProfileId, int PowerLineStatus, ResolvedDisplayMode Mode, bool ResolutionLocked);
+    private sealed record EnforcedDisplayMode(Guid ProfileId, int PowerLineStatus, ResolvedDisplayMode Mode);
 
     private static EnforcedDisplayMode ResolveEnforcedDisplayMode(DisplayTarget target, Profile? profile, int powerLineStatus)
     {
         ResolvedDisplayMode mode = ManagerFactory.powerProfileManager.ResolveDisplayMode(profile, powerLineStatus, target.Id);
 
-        // integer scaling drives the primary display resolution, only the refresh rate is ours
-        bool resolutionLocked = target.IsPrimary && profile?.IntegerScalingEnabled == true;
-        return new(profile?.Guid ?? Guid.Empty, powerLineStatus, mode, resolutionLocked);
+        // integer scaling drives the primary display resolution through its divider, the resolution override doesn't apply
+        if (target.IsPrimary)
+        {
+            ResolvedGraphicsGroup<IntegerScalingOverride> integerScaling = ManagerFactory.powerProfileManager.ResolveGraphics(profile, powerLineStatus).IntegerScaling;
+            if (integerScaling.IsEnabled)
+            {
+                // an unknown divider leaves the resolution alone
+                ScreenDivider? divider = target.Dividers.FirstOrDefault(d => d.divider == integerScaling.Values!.Divider);
+                DisplayModeSource source = integerScaling.Source == GraphicsSource.GameProfile ? DisplayModeSource.GameProfile : DisplayModeSource.DefaultProfile;
+                mode = divider is null
+                    ? mode with { Width = 0, Height = 0, ResolutionSource = DisplayModeSource.None }
+                    : mode with { Width = divider.resolution.Width, Height = divider.resolution.Height, ResolutionSource = source };
+            }
+        }
+
+        return new(profile?.Guid ?? Guid.Empty, powerLineStatus, mode);
     }
 
     /// <summary>
@@ -886,7 +899,7 @@ public class MultimediaManager : IManager
         {
             return AllScreens.Values
                 .Where(s => s.KnownMonitorId != Guid.Empty && !string.IsNullOrEmpty(s.screen?.DeviceName))
-                .Select(s => new DisplayTarget(s.KnownMonitorId, s.screen!.DeviceName, s.FriendlyName, s.IsPrimary, s.screenResolutions.ToList()))
+                .Select(s => new DisplayTarget(s.KnownMonitorId, s.screen!.DeviceName, s.FriendlyName, s.IsPrimary, s.screenResolutions.ToList(), s.screenDividers.ToList()))
                 .ToList();
         }
     }
@@ -917,7 +930,7 @@ public class MultimediaManager : IManager
                     _enforcedDisplayModes[target.Id] = enforced;
 
                     ResolvedDisplayMode mode = enforced.Mode;
-                    bool hasResolution = mode.HasResolution && !enforced.ResolutionLocked;
+                    bool hasResolution = mode.HasResolution;
                     bool hasRefreshRate = mode.HasRefreshRate;
 
                     _systemDisplayModes.TryGetValue(target.Id, out SystemDisplayMode? systemMode);
