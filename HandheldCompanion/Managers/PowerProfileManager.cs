@@ -507,11 +507,17 @@ namespace HandheldCompanion.Managers
 
             // the power profile is the baseline: an enabled limiter writes its value, a disabled one removes the limit,
             // so a limit set by a previous profile never stays in RTSS
-            int baseline = powerProfile is not null && (powerProfile.FramerateLimitEnabled ?? powerProfile.FramerateValue != 0)
+            return (FramerateLimitMode.Override, GetFramerateBaseline(powerProfile), FramerateLimitSource.PowerProfile);
+        }
+
+        /// <summary>
+        /// Framerate limit the power profile gives when no profile overrides it, 0 means no limit.
+        /// </summary>
+        public static int GetFramerateBaseline(PowerProfile? powerProfile)
+        {
+            return powerProfile is not null && (powerProfile.FramerateLimitEnabled ?? powerProfile.FramerateValue != 0)
                 ? Math.Max(0, powerProfile.FramerateValue)
                 : 0;
-
-            return (FramerateLimitMode.Override, baseline, FramerateLimitSource.PowerProfile);
         }
 
         /// <summary>

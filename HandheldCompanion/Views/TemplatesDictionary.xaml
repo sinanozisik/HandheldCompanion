@@ -2041,6 +2041,30 @@
         <Setter Property="CornerRadius" Value="4" />
     </Style>
 
+    <!--  override choice entries: a choice that can't apply right now stays listed but disabled  -->
+    <Style
+        x:Key="OverrideChoiceItemStyle"
+        BasedOn="{StaticResource {x:Type ComboBoxItem}}"
+        TargetType="ComboBoxItem">
+        <Setter Property="IsEnabled" Value="{Binding IsEnabled, Mode=OneWay}" />
+    </Style>
+
+    <!--  a stored value the list no longer offers reads dimmed and italic, in the list and in the closed combo  -->
+    <DataTemplate x:Key="OverrideChoiceItemTemplate">
+        <TextBlock Text="{Binding Label, Mode=OneWay}">
+            <TextBlock.Style>
+                <Style TargetType="TextBlock">
+                    <Style.Triggers>
+                        <DataTrigger Binding="{Binding IsStale, Mode=OneTime}" Value="True">
+                            <Setter Property="FontStyle" Value="Italic" />
+                            <Setter Property="Foreground" Value="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
+                        </DataTrigger>
+                    </Style.Triggers>
+                </Style>
+            </TextBlock.Style>
+        </TextBlock>
+    </DataTemplate>
+
     <!--  Profile display override row (ProfilesPage and QuickProfilesPage): one monitor of a power slot; these rows sit outside the expander item list, so they carry its item look themselves  -->
     <DataTemplate x:Key="DisplayOverrideRowTemplate">
         <ikw:SimpleStackPanel>
@@ -2096,59 +2120,21 @@
             </ui:SettingsCard>
 
             <ikw:SimpleStackPanel Visibility="{Binding ShowSettings, Mode=OneWay, Converter={StaticResource BooleanToVisibilityConverter}}">
-                <!--  mode row, then a value row only when overridden, like Framerate limit and FPS  -->
+                <!--  one choice each: Inherit with the value it gives, or a value that overrides it  -->
                 <ui:SettingsCard
                     MinHeight="52"
                     Padding="{DynamicResource SettingsExpanderItemPadding}"
                     ui:ControlHelper.CornerRadius="0"
                     BorderThickness="{DynamicResource SettingsExpanderItemBorderThickness}"
-                    Command="{Binding ToggleResolutionExpandedCommand}"
                     Description="{Binding ResolutionHint, Mode=OneWay}"
-                    Header="{l:Static resx:Resources.QuickDevicePage_DisplayResolution}"
-                    IsActionIconVisible="False"
-                    IsClickEnabled="{Binding IsResolutionOverride, Mode=OneWay}">
-                    <!--  the chevron sits in the right padding, where a clickable row has its action icon, so the combo does not move  -->
-                    <StackPanel Orientation="Horizontal">
-                        <StackPanel.Style>
-                            <Style TargetType="StackPanel">
-                                <Setter Property="Margin" Value="0" />
-                                <Style.Triggers>
-                                    <DataTrigger Binding="{Binding IsResolutionOverride, Mode=OneWay}" Value="True">
-                                        <Setter Property="Margin" Value="0,0,-28,0" />
-                                    </DataTrigger>
-                                </Style.Triggers>
-                            </Style>
-                        </StackPanel.Style>
-                        <ComboBox
-                            MinWidth="140"
-                            DisplayMemberPath="Label"
-                            IsEnabled="{Binding IsResolutionModeEnabled, Mode=OneWay}"
-                            ItemsSource="{Binding DisplayModeOptions, Mode=OneWay}"
-                            SelectedValue="{Binding ResolutionMode, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
-                            SelectedValuePath="Mode" />
-                        <Border Width="28" Visibility="{Binding IsResolutionOverride, Mode=OneWay, Converter={StaticResource BooleanToVisibilityConverter}}">
-                            <ui:FontIcon
-                                HorizontalAlignment="Right"
-                                VerticalAlignment="Center"
-                                FontSize="12"
-                                Glyph="{Binding ResolutionChevronGlyph, Mode=OneWay}" />
-                        </Border>
-                    </StackPanel>
-                </ui:SettingsCard>
-
-                <ui:SettingsCard
-                    MinHeight="52"
-                    Padding="{DynamicResource SettingsExpanderItemPadding}"
-                    ui:ControlHelper.CornerRadius="0"
-                    BorderThickness="{DynamicResource SettingsExpanderItemBorderThickness}"
-                    Header="{l:Static resx:Resources.ProfilesPage_DisplayResolutionValue}"
-                    Visibility="{Binding ShowResolutionValue, Mode=OneWay, Converter={StaticResource BooleanToVisibilityConverter}}">
+                    Header="{l:Static resx:Resources.QuickDevicePage_DisplayResolution}">
                     <ComboBox
-                        MinWidth="140"
-                        DisplayMemberPath="Label"
-                        ItemsSource="{Binding Resolutions, Mode=OneWay}"
-                        SelectedValue="{Binding SelectedResolution, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
-                        SelectedValuePath="Key" />
+                        MinWidth="160"
+                        IsEnabled="{Binding IsResolutionEnabled, Mode=OneWay}"
+                        ItemContainerStyle="{StaticResource OverrideChoiceItemStyle}"
+                        ItemTemplate="{StaticResource OverrideChoiceItemTemplate}"
+                        ItemsSource="{Binding ResolutionChoices, Mode=OneWay}"
+                        SelectedItem="{Binding SelectedResolutionChoice, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
                 </ui:SettingsCard>
 
                 <ui:SettingsCard
@@ -2156,52 +2142,13 @@
                     Padding="{DynamicResource SettingsExpanderItemPadding}"
                     ui:ControlHelper.CornerRadius="0"
                     BorderThickness="{DynamicResource SettingsExpanderItemBorderThickness}"
-                    Command="{Binding ToggleRefreshExpandedCommand}"
-                    Description="{Binding RefreshHint, Mode=OneWay}"
-                    Header="{l:Static resx:Resources.QuickDevicePage_DisplayFrequency}"
-                    IsActionIconVisible="False"
-                    IsClickEnabled="{Binding IsRefreshOverride, Mode=OneWay}">
-                    <!--  the chevron sits in the right padding, where a clickable row has its action icon, so the combo does not move  -->
-                    <StackPanel Orientation="Horizontal">
-                        <StackPanel.Style>
-                            <Style TargetType="StackPanel">
-                                <Setter Property="Margin" Value="0" />
-                                <Style.Triggers>
-                                    <DataTrigger Binding="{Binding IsRefreshOverride, Mode=OneWay}" Value="True">
-                                        <Setter Property="Margin" Value="0,0,-28,0" />
-                                    </DataTrigger>
-                                </Style.Triggers>
-                            </Style>
-                        </StackPanel.Style>
-                        <ComboBox
-                            MinWidth="140"
-                            DisplayMemberPath="Label"
-                            ItemsSource="{Binding DisplayModeOptions, Mode=OneWay}"
-                            SelectedValue="{Binding RefreshMode, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
-                            SelectedValuePath="Mode" />
-                        <Border Width="28" Visibility="{Binding IsRefreshOverride, Mode=OneWay, Converter={StaticResource BooleanToVisibilityConverter}}">
-                            <ui:FontIcon
-                                HorizontalAlignment="Right"
-                                VerticalAlignment="Center"
-                                FontSize="12"
-                                Glyph="{Binding RefreshChevronGlyph, Mode=OneWay}" />
-                        </Border>
-                    </StackPanel>
-                </ui:SettingsCard>
-
-                <ui:SettingsCard
-                    MinHeight="52"
-                    Padding="{DynamicResource SettingsExpanderItemPadding}"
-                    ui:ControlHelper.CornerRadius="0"
-                    BorderThickness="{DynamicResource SettingsExpanderItemBorderThickness}"
-                    Header="{l:Static resx:Resources.ProfilesPage_DisplayRefreshRateValue}"
-                    Visibility="{Binding ShowRefreshValue, Mode=OneWay, Converter={StaticResource BooleanToVisibilityConverter}}">
+                    Header="{l:Static resx:Resources.QuickDevicePage_DisplayFrequency}">
                     <ComboBox
-                        MinWidth="140"
-                        DisplayMemberPath="Label"
-                        ItemsSource="{Binding RefreshRates, Mode=OneWay}"
-                        SelectedValue="{Binding SelectedRefreshRate, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
-                        SelectedValuePath="Frequency" />
+                        MinWidth="160"
+                        ItemContainerStyle="{StaticResource OverrideChoiceItemStyle}"
+                        ItemTemplate="{StaticResource OverrideChoiceItemTemplate}"
+                        ItemsSource="{Binding RefreshChoices, Mode=OneWay}"
+                        SelectedItem="{Binding SelectedRefreshChoice, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
                 </ui:SettingsCard>
             </ikw:SimpleStackPanel>
         </ikw:SimpleStackPanel>
@@ -2210,70 +2157,20 @@
     <!--  Profile graphics override row (ProfilesPage and QuickProfilesPage): one graphics group of a power slot; these rows sit outside the expander item list, so they carry its item look themselves  -->
     <DataTemplate x:Key="GraphicsOverrideRowTemplate">
         <ikw:SimpleStackPanel IsEnabled="{Binding IsSupported, Mode=OneWay}" Visibility="{Binding IsVisible, Mode=OneWay, Converter={StaticResource BooleanToVisibilityConverter}}">
-            <!--  mode row, then the value rows only when overridden, like Framerate limit and FPS  -->
+            <!--  one choice: Inherit with the value it gives, or a value that overrides it; the value rows follow while overridden and on  -->
             <ui:SettingsCard
                 MinHeight="52"
                 Padding="{DynamicResource SettingsExpanderItemPadding}"
                 ui:ControlHelper.CornerRadius="0"
                 BorderThickness="{DynamicResource SettingsExpanderItemBorderThickness}"
-                Command="{Binding ToggleExpandedCommand}"
                 Description="{Binding Hint, Mode=OneWay}"
-                Header="{Binding Header, Mode=OneWay}"
-                IsActionIconVisible="False"
-                IsClickEnabled="{Binding IsOverride, Mode=OneWay}">
-                <!--  the chevron sits in the right padding, where a clickable row has its action icon, so the combo does not move  -->
-                <StackPanel Orientation="Horizontal">
-                    <StackPanel.Style>
-                        <Style TargetType="StackPanel">
-                            <Setter Property="Margin" Value="0" />
-                            <Style.Triggers>
-                                <DataTrigger Binding="{Binding IsOverride, Mode=OneWay}" Value="True">
-                                    <Setter Property="Margin" Value="0,0,-28,0" />
-                                </DataTrigger>
-                            </Style.Triggers>
-                        </Style>
-                    </StackPanel.Style>
-                    <ComboBox
-                        MinWidth="140"
-                        DisplayMemberPath="Label"
-                        ItemsSource="{Binding ModeOptions, Mode=OneWay}"
-                        SelectedValue="{Binding Mode, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
-                        SelectedValuePath="Mode"
-                        Visibility="{Binding ShowModeSelector, Mode=OneWay, Converter={StaticResource BooleanToVisibilityConverter}}" />
-                    <Border Width="28" Visibility="{Binding IsOverride, Mode=OneWay, Converter={StaticResource BooleanToVisibilityConverter}}">
-                        <ui:FontIcon
-                            HorizontalAlignment="Right"
-                            VerticalAlignment="Center"
-                            FontSize="12"
-                            Glyph="{Binding ChevronGlyph, Mode=OneWay}" />
-                    </Border>
-                </StackPanel>
-            </ui:SettingsCard>
-
-            <ui:SettingsCard
-                MinHeight="52"
-                Padding="{DynamicResource SettingsExpanderItemPadding}"
-                ui:ControlHelper.CornerRadius="0"
-                BorderThickness="{DynamicResource SettingsExpanderItemBorderThickness}"
-                Header="{l:Static resx:Resources.ProfilesPage_GraphicsEnabled}"
-                Visibility="{Binding ShowValues, Mode=OneWay, Converter={StaticResource BooleanToVisibilityConverter}}">
-                <ui:ToggleSwitch IsOn="{Binding IsEnabled, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
-            </ui:SettingsCard>
-
-            <!--  GPU scaling  -->
-            <ui:SettingsCard
-                MinHeight="52"
-                Padding="{DynamicResource SettingsExpanderItemPadding}"
-                ui:ControlHelper.CornerRadius="0"
-                BorderThickness="{DynamicResource SettingsExpanderItemBorderThickness}"
-                Header="{l:Static resx:Resources.ProfilesPage_ScalingMode}"
-                IsEnabled="{Binding IsEnabled, Mode=OneWay}"
-                Visibility="{Binding ShowScalingMode, Mode=OneWay, Converter={StaticResource BooleanToVisibilityConverter}}">
-                <ComboBox MinWidth="140" SelectedIndex="{Binding ScalingMode, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}">
-                    <ComboBoxItem Content="{l:Static resx:Resources.ProfilesPage_ScalingMode_PreserveAspectRatio}" />
-                    <ComboBoxItem Content="{l:Static resx:Resources.ProfilesPage_ScalingMode_FullPanel}" />
-                    <ComboBoxItem Content="{l:Static resx:Resources.ProfilesPage_ScalingMode_Center}" IsEnabled="{Binding IsCenterScalingEnabled, Mode=OneWay}" />
-                </ComboBox>
+                Header="{Binding Header, Mode=OneWay}">
+                <ComboBox
+                    MinWidth="160"
+                    ItemContainerStyle="{StaticResource OverrideChoiceItemStyle}"
+                    ItemTemplate="{StaticResource OverrideChoiceItemTemplate}"
+                    ItemsSource="{Binding Choices, Mode=OneWay}"
+                    SelectedItem="{Binding SelectedChoice, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
             </ui:SettingsCard>
 
             <!--  RSR and image sharpening  -->
@@ -2283,7 +2180,6 @@
                 ui:ControlHelper.CornerRadius="0"
                 BorderThickness="{DynamicResource SettingsExpanderItemBorderThickness}"
                 Header="{Binding SharpnessHeader, Mode=OneWay}"
-                IsEnabled="{Binding IsEnabled, Mode=OneWay}"
                 Visibility="{Binding ShowSharpness, Mode=OneWay, Converter={StaticResource BooleanToVisibilityConverter}}">
                 <DockPanel>
                     <TextBox
@@ -2318,23 +2214,8 @@
                 Padding="{DynamicResource SettingsExpanderItemPadding}"
                 ui:ControlHelper.CornerRadius="0"
                 BorderThickness="{DynamicResource SettingsExpanderItemBorderThickness}"
-                Header="{l:Static resx:Resources.ProfilesPage_ResolutionScale}"
-                IsEnabled="{Binding IsEnabled, Mode=OneWay}"
-                Visibility="{Binding ShowIntegerScaling, Mode=OneWay, Converter={StaticResource BooleanToVisibilityConverter}}">
-                <ComboBox
-                    MinWidth="140"
-                    ItemsSource="{Binding Dividers, Mode=OneWay}"
-                    SelectedIndex="{Binding DividerIndex, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
-            </ui:SettingsCard>
-
-            <ui:SettingsCard
-                MinHeight="52"
-                Padding="{DynamicResource SettingsExpanderItemPadding}"
-                ui:ControlHelper.CornerRadius="0"
-                BorderThickness="{DynamicResource SettingsExpanderItemBorderThickness}"
                 Header="{l:Static resx:Resources.ProfilesPage_ResolutionScaleType}"
-                IsEnabled="{Binding IsEnabled, Mode=OneWay}"
-                Visibility="{Binding ShowIntegerScaling, Mode=OneWay, Converter={StaticResource BooleanToVisibilityConverter}}">
+                Visibility="{Binding ShowIntegerScalingType, Mode=OneWay, Converter={StaticResource BooleanToVisibilityConverter}}">
                 <ComboBox MinWidth="140" SelectedIndex="{Binding IntegerScalingType, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}">
                     <ComboBoxItem Content="{l:Static resx:Resources.ProfilesPage_ResolutionScaleTypeInteger}" />
                     <ComboBoxItem Content="{l:Static resx:Resources.ProfilesPage_ResolutionScaleTypeNearest}" />
@@ -2348,7 +2229,6 @@
                 ui:ControlHelper.CornerRadius="0"
                 BorderThickness="{DynamicResource SettingsExpanderItemBorderThickness}"
                 Header="{l:Static resx:Resources.ProfilesPage_AFMFAlgorithm}"
-                IsEnabled="{Binding IsEnabled, Mode=OneWay}"
                 Visibility="{Binding ShowAFMF21, Mode=OneWay, Converter={StaticResource BooleanToVisibilityConverter}}">
                 <ComboBox MinWidth="140" SelectedIndex="{Binding AFMFAlgorithm, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}">
                     <ComboBoxItem Content="{l:Static resx:Resources.ProfilesPage_AFMFAlgorithm_Auto}" />
@@ -2363,7 +2243,6 @@
                 ui:ControlHelper.CornerRadius="0"
                 BorderThickness="{DynamicResource SettingsExpanderItemBorderThickness}"
                 Header="{l:Static resx:Resources.ProfilesPage_AFMFSearchMode}"
-                IsEnabled="{Binding IsEnabled, Mode=OneWay}"
                 Visibility="{Binding ShowAFMF21, Mode=OneWay, Converter={StaticResource BooleanToVisibilityConverter}}">
                 <ComboBox MinWidth="140" SelectedIndex="{Binding AFMFSearchMode, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}">
                     <ComboBoxItem Content="{l:Static resx:Resources.ProfilesPage_AFMFSearchMode_Auto}" />
@@ -2378,7 +2257,6 @@
                 ui:ControlHelper.CornerRadius="0"
                 BorderThickness="{DynamicResource SettingsExpanderItemBorderThickness}"
                 Header="{l:Static resx:Resources.ProfilesPage_AFMFPerformanceMode}"
-                IsEnabled="{Binding IsEnabled, Mode=OneWay}"
                 Visibility="{Binding ShowAFMF21, Mode=OneWay, Converter={StaticResource BooleanToVisibilityConverter}}">
                 <ComboBox MinWidth="140" SelectedIndex="{Binding AFMFPerformanceMode, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}">
                     <ComboBoxItem Content="{l:Static resx:Resources.ProfilesPage_AFMFPerformanceMode_Auto}" />
@@ -2393,7 +2271,6 @@
                 ui:ControlHelper.CornerRadius="0"
                 BorderThickness="{DynamicResource SettingsExpanderItemBorderThickness}"
                 Header="{l:Static resx:Resources.ProfilesPage_AFMFFastMotionResponse}"
-                IsEnabled="{Binding IsEnabled, Mode=OneWay}"
                 Visibility="{Binding ShowAFMF21, Mode=OneWay, Converter={StaticResource BooleanToVisibilityConverter}}">
                 <ComboBox MinWidth="140" SelectedIndex="{Binding AFMFFastMotionResponse, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}">
                     <ComboBoxItem Content="{l:Static resx:Resources.ProfilesPage_AFMFFastMotionResponse_RepeatFrames}" />

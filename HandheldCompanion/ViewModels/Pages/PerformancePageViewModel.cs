@@ -53,16 +53,6 @@ namespace HandheldCompanion.ViewModels
         }
     }
 
-    public sealed record FramerateModeOption(FramerateLimitMode Mode, string Label)
-    {
-        public override string ToString() => Label;
-    }
-
-    public sealed record DisplayModeOption(DisplayOverrideMode Mode, string Label)
-    {
-        public override string ToString() => Label;
-    }
-
     public sealed record DisplayMonitorOption(Guid Id, string Label, bool IsPrimary, int CurrentWidth, int CurrentHeight, int CurrentFrequency, IReadOnlyList<DisplayResolutionOption> Resolutions)
     {
         // built-in panel, shown as an Internal badge on the profile monitor rows

@@ -203,55 +203,21 @@
                                 </ComboBox>
                             </ui:SettingsCard>
 
-                            <!--  overridden: the row expands to its value rows, which keep the same left edge; a fixed padding keeps the clickable item style from moving the combo  -->
-                            <ui:SettingsCard
-                                Padding="{DynamicResource SettingsExpanderItemPadding}"
-                                Command="{Binding ToggleFramerateExpandedACCommand}"
-                                Description="{Binding FramerateHintAC, Mode=OneWay, UpdateSourceTrigger=PropertyChanged}"
-                                Header="{l:Static resx:Resources.ProfilesPage_FramerateLimit}"
-                                IsActionIconVisible="False"
-                                IsClickEnabled="{Binding IsFramerateOverrideAC, Mode=OneWay}">
-                                <!--  the chevron sits in the right padding, where a clickable row has its action icon, so the combo does not move  -->
-                                <StackPanel Orientation="Horizontal">
-                                    <StackPanel.Style>
-                                        <Style TargetType="StackPanel">
-                                            <Setter Property="Margin" Value="0" />
-                                            <Style.Triggers>
-                                                <DataTrigger Binding="{Binding IsFramerateOverrideAC, Mode=OneWay}" Value="True">
-                                                    <Setter Property="Margin" Value="0,0,-28,0" />
-                                                </DataTrigger>
-                                            </Style.Triggers>
-                                        </Style>
-                                    </StackPanel.Style>
-                                    <ComboBox
-                                        MinWidth="140"
-                                        ItemsSource="{Binding FramerateModeOptions, Mode=OneWay, UpdateSourceTrigger=PropertyChanged}"
-                                        DisplayMemberPath="Label"
-                                        SelectedValue="{Binding FramerateModeAC, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
-                                        SelectedValuePath="Mode" />
-                                    <Border Width="28" Visibility="{Binding IsFramerateOverrideAC, Mode=OneWay, Converter={StaticResource BooleanToVisibilityConverter}}">
-                                        <ui:FontIcon
-                                            HorizontalAlignment="Right"
-                                            VerticalAlignment="Center"
-                                            FontSize="12"
-                                            Glyph="{Binding FramerateChevronAC, Mode=OneWay}" />
-                                    </Border>
-                                </StackPanel>
-                            </ui:SettingsCard>
-
-                            <ui:SettingsCard Header="{l:Static resx:Resources.QuickPerformancePage_AutoTDPUnitFPS}" Visibility="{Binding ShowFramerateValueAC, Mode=OneWay, UpdateSourceTrigger=PropertyChanged, Converter={StaticResource BooleanToVisibilityConverter}}">
+                            <!--  one choice: Inherit with the value it gives, or a value that overrides it; Custom adds the slider row  -->
+                            <ui:SettingsCard Header="{l:Static resx:Resources.ProfilesPage_FramerateLimit}">
                                 <ComboBox
                                     MinWidth="140"
-                                    ItemsSource="{Binding FramerateLimitsAC, Mode=OneWay, UpdateSourceTrigger=PropertyChanged}"
-                                    SelectedValue="{Binding SelectedFrameLimitKeyAC, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
-                                    SelectedValuePath="SelectionKey" />
+                                    ItemContainerStyle="{StaticResource OverrideChoiceItemStyle}"
+                                    ItemTemplate="{StaticResource OverrideChoiceItemTemplate}"
+                                    ItemsSource="{Binding FramerateRowAC.Choices, Mode=OneWay}"
+                                    SelectedItem="{Binding FramerateRowAC.SelectedChoice, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
                             </ui:SettingsCard>
 
-                            <ui:SettingsCard Visibility="{Binding ShowFramerateCustomAC, Mode=OneWay, UpdateSourceTrigger=PropertyChanged, Converter={StaticResource BooleanToVisibilityConverter}}">
+                            <ui:SettingsCard Visibility="{Binding FramerateRowAC.ShowCustom, Mode=OneWay, Converter={StaticResource BooleanToVisibilityConverter}}">
                                 <DockPanel Width="{Binding ActualWidth, RelativeSource={RelativeSource Mode=FindAncestor, AncestorType=ui:SettingsCard}}">
                                     <Label
                                         VerticalAlignment="Center"
-                                        Content="{Binding FramerateCustomValueAC, UpdateSourceTrigger=PropertyChanged, Mode=OneWay}"
+                                        Content="{Binding FramerateRowAC.CustomValue, UpdateSourceTrigger=PropertyChanged, Mode=OneWay}"
                                         ContentStringFormat="{}{0:N0} FPS"
                                         Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
                                     <Slider
@@ -262,13 +228,13 @@
                                         IsMoveToPointEnabled="True"
                                         IsSnapToTickEnabled="True"
                                         LargeChange="10"
-                                        Maximum="{Binding FramerateCustomMaximumAC, Mode=OneWay, UpdateSourceTrigger=PropertyChanged}"
-                                        Minimum="{Binding FramerateCustomMinimum, Mode=OneWay}"
+                                        Maximum="{Binding FramerateRowAC.CustomMaximum, Mode=OneWay}"
+                                        Minimum="{Binding FramerateRowAC.CustomMinimum, Mode=OneWay}"
                                         SmallChange="1"
                                         TickFrequency="1"
                                         TickPlacement="BottomRight"
                                         ToolTip="{Binding Value, StringFormat=N0, RelativeSource={RelativeSource Self}, Mode=OneWay}"
-                                        Value="{Binding FramerateCustomValueAC, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+                                        Value="{Binding FramerateRowAC.CustomValue, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
                                 </DockPanel>
                             </ui:SettingsCard>
 
@@ -333,55 +299,21 @@
                                 </ComboBox>
                             </ui:SettingsCard>
 
-                            <!--  overridden: the row expands to its value rows, which keep the same left edge; a fixed padding keeps the clickable item style from moving the combo  -->
-                            <ui:SettingsCard
-                                Padding="{DynamicResource SettingsExpanderItemPadding}"
-                                Command="{Binding ToggleFramerateExpandedDCCommand}"
-                                Description="{Binding FramerateHintDC, Mode=OneWay, UpdateSourceTrigger=PropertyChanged}"
-                                Header="{l:Static resx:Resources.ProfilesPage_FramerateLimit}"
-                                IsActionIconVisible="False"
-                                IsClickEnabled="{Binding IsFramerateOverrideDC, Mode=OneWay}">
-                                <!--  the chevron sits in the right padding, where a clickable row has its action icon, so the combo does not move  -->
-                                <StackPanel Orientation="Horizontal">
-                                    <StackPanel.Style>
-                                        <Style TargetType="StackPanel">
-                                            <Setter Property="Margin" Value="0" />
-                                            <Style.Triggers>
-                                                <DataTrigger Binding="{Binding IsFramerateOverrideDC, Mode=OneWay}" Value="True">
-                                                    <Setter Property="Margin" Value="0,0,-28,0" />
-                                                </DataTrigger>
-                                            </Style.Triggers>
-                                        </Style>
-                                    </StackPanel.Style>
-                                    <ComboBox
-                                        MinWidth="140"
-                                        ItemsSource="{Binding FramerateModeOptions, Mode=OneWay, UpdateSourceTrigger=PropertyChanged}"
-                                        DisplayMemberPath="Label"
-                                        SelectedValue="{Binding FramerateModeDC, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
-                                        SelectedValuePath="Mode" />
-                                    <Border Width="28" Visibility="{Binding IsFramerateOverrideDC, Mode=OneWay, Converter={StaticResource BooleanToVisibilityConverter}}">
-                                        <ui:FontIcon
-                                            HorizontalAlignment="Right"
-                                            VerticalAlignment="Center"
-                                            FontSize="12"
-                                            Glyph="{Binding FramerateChevronDC, Mode=OneWay}" />
-                                    </Border>
-                                </StackPanel>
-                            </ui:SettingsCard>
-
-                            <ui:SettingsCard Header="{l:Static resx:Resources.QuickPerformancePage_AutoTDPUnitFPS}" Visibility="{Binding ShowFramerateValueDC, Mode=OneWay, UpdateSourceTrigger=PropertyChanged, Converter={StaticResource BooleanToVisibilityConverter}}">
+                            <!--  one choice: Inherit with the value it gives, or a value that overrides it; Custom adds the slider row  -->
+                            <ui:SettingsCard Header="{l:Static resx:Resources.ProfilesPage_FramerateLimit}">
                                 <ComboBox
                                     MinWidth="140"
-                                    ItemsSource="{Binding FramerateLimitsDC, Mode=OneWay, UpdateSourceTrigger=PropertyChanged}"
-                                    SelectedValue="{Binding SelectedFrameLimitKeyDC, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
-                                    SelectedValuePath="SelectionKey" />
+                                    ItemContainerStyle="{StaticResource OverrideChoiceItemStyle}"
+                                    ItemTemplate="{StaticResource OverrideChoiceItemTemplate}"
+                                    ItemsSource="{Binding FramerateRowDC.Choices, Mode=OneWay}"
+                                    SelectedItem="{Binding FramerateRowDC.SelectedChoice, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
                             </ui:SettingsCard>
 
-                            <ui:SettingsCard Visibility="{Binding ShowFramerateCustomDC, Mode=OneWay, UpdateSourceTrigger=PropertyChanged, Converter={StaticResource BooleanToVisibilityConverter}}">
+                            <ui:SettingsCard Visibility="{Binding FramerateRowDC.ShowCustom, Mode=OneWay, Converter={StaticResource BooleanToVisibilityConverter}}">
                                 <DockPanel Width="{Binding ActualWidth, RelativeSource={RelativeSource Mode=FindAncestor, AncestorType=ui:SettingsCard}}">
                                     <Label
                                         VerticalAlignment="Center"
-                                        Content="{Binding FramerateCustomValueDC, UpdateSourceTrigger=PropertyChanged, Mode=OneWay}"
+                                        Content="{Binding FramerateRowDC.CustomValue, UpdateSourceTrigger=PropertyChanged, Mode=OneWay}"
                                         ContentStringFormat="{}{0:N0} FPS"
                                         Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
                                     <Slider
@@ -392,13 +324,13 @@
                                         IsMoveToPointEnabled="True"
                                         IsSnapToTickEnabled="True"
                                         LargeChange="10"
-                                        Maximum="{Binding FramerateCustomMaximumDC, Mode=OneWay, UpdateSourceTrigger=PropertyChanged}"
-                                        Minimum="{Binding FramerateCustomMinimum, Mode=OneWay}"
+                                        Maximum="{Binding FramerateRowDC.CustomMaximum, Mode=OneWay}"
+                                        Minimum="{Binding FramerateRowDC.CustomMinimum, Mode=OneWay}"
                                         SmallChange="1"
                                         TickFrequency="1"
                                         TickPlacement="BottomRight"
                                         ToolTip="{Binding Value, StringFormat=N0, RelativeSource={RelativeSource Self}, Mode=OneWay}"
-                                        Value="{Binding FramerateCustomValueDC, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+                                        Value="{Binding FramerateRowDC.CustomValue, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
                                 </DockPanel>
                             </ui:SettingsCard>
 

@@ -9147,16 +9147,7 @@ namespace HandheldCompanion.Properties {
         }
         
         /// <summary>
-        ///   Looks up a localized string similar to Override.
-        /// </summary>
-        public static string OverrideMode_Override {
-            get {
-                return ResourceManager.GetString("OverrideMode_Override", resourceCulture);
-            }
-        }
-        
-        /// <summary>
-        ///   Looks up a localized string similar to Use default profile.
+        ///   Looks up a localized string similar to Use default profile ({0}).
         /// </summary>
         public static string OverrideMode_UseDefaultProfile {
             get {
@@ -9165,7 +9156,7 @@ namespace HandheldCompanion.Properties {
         }
         
         /// <summary>
-        ///   Looks up a localized string similar to Use power profile.
+        ///   Looks up a localized string similar to Use power profile ({0}).
         /// </summary>
         public static string OverrideMode_UsePowerProfile {
             get {
@@ -9174,7 +9165,7 @@ namespace HandheldCompanion.Properties {
         }
         
         /// <summary>
-        ///   Looks up a localized string similar to Use system settings.
+        ///   Looks up a localized string similar to Use system settings ({0}).
         /// </summary>
         public static string OverrideMode_UseSystemSettings {
             get {
@@ -10470,29 +10461,11 @@ namespace HandheldCompanion.Properties {
         }
         
         /// <summary>
-        ///   Looks up a localized string similar to Hz.
-        /// </summary>
-        public static string ProfilesPage_DisplayRefreshRateValue {
-            get {
-                return ResourceManager.GetString("ProfilesPage_DisplayRefreshRateValue", resourceCulture);
-            }
-        }
-        
-        /// <summary>
         ///   Looks up a localized string similar to Set by integer scaling.
         /// </summary>
         public static string ProfilesPage_DisplayResolutionLocked {
             get {
                 return ResourceManager.GetString("ProfilesPage_DisplayResolutionLocked", resourceCulture);
-            }
-        }
-        
-        /// <summary>
-        ///   Looks up a localized string similar to Width x height.
-        /// </summary>
-        public static string ProfilesPage_DisplayResolutionValue {
-            get {
-                return ResourceManager.GetString("ProfilesPage_DisplayResolutionValue", resourceCulture);
             }
         }
         
@@ -10695,6 +10668,15 @@ namespace HandheldCompanion.Properties {
         }
         
         /// <summary>
+        ///   Looks up a localized string similar to On, {0}%.
+        /// </summary>
+        public static string ProfilesPage_GraphicsOnPercent {
+            get {
+                return ResourceManager.GetString("ProfilesPage_GraphicsOnPercent", resourceCulture);
+            }
+        }
+        
+        /// <summary>
         ///   Looks up a localized string similar to Change the graphics settings.
         /// </summary>
         public static string ProfilesPage_GraphicsSetting_Desc {
@@ -10709,15 +10691,6 @@ namespace HandheldCompanion.Properties {
         public static string ProfilesPage_GraphicsSetting_Title {
             get {
                 return ResourceManager.GetString("ProfilesPage_GraphicsSetting_Title", resourceCulture);
-            }
-        }
-        
-        /// <summary>
-        ///   Looks up a localized string similar to Enabled.
-        /// </summary>
-        public static string ProfilesPage_GraphicsEnabled {
-            get {
-                return ResourceManager.GetString("ProfilesPage_GraphicsEnabled", resourceCulture);
             }
         }
         
@@ -11773,6 +11746,15 @@ namespace HandheldCompanion.Properties {
         public static string ProfilesPage_UpdateProfile {
             get {
                 return ResourceManager.GetString("ProfilesPage_UpdateProfile", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Looks up a localized string similar to {0} (not available).
+        /// </summary>
+        public static string ProfilesPage_ValueNotAvailable {
+            get {
+                return ResourceManager.GetString("ProfilesPage_ValueNotAvailable", resourceCulture);
             }
         }
         
