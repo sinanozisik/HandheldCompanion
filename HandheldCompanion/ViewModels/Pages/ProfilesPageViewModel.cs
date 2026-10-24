@@ -183,28 +183,28 @@ namespace HandheldCompanion.ViewModels
         public bool IsAMDGPU
         {
             get => _IsAMDGPU;
-            set { if (value != _IsAMDGPU) { _IsAMDGPU = value; OnPropertyChanged(nameof(IsAMDGPU)); } }
+            set { if (value != _IsAMDGPU) { _IsAMDGPU = value; OnPropertyChanged(nameof(IsAMDGPU)); RefreshGraphicsOverrideRows(); } }
         }
 
         private bool _HasRSRSupport;
         public bool HasRSRSupport
         {
-            get => _HasRSRSupport && _GPUScalingEnabled;
-            set { if (value != _HasRSRSupport) { _HasRSRSupport = value; OnPropertyChanged(nameof(HasRSRSupport)); } }
+            get => _HasRSRSupport;
+            set { if (value != _HasRSRSupport) { _HasRSRSupport = value; OnPropertyChanged(nameof(HasRSRSupport)); RefreshGraphicsOverrideRows(); } }
         }
 
         private bool _HasAFMFSupport;
         public bool HasAFMFSupport
         {
             get => _HasAFMFSupport;
-            set { if (value != _HasAFMFSupport) { _HasAFMFSupport = value; OnPropertyChanged(nameof(HasAFMFSupport)); } }
+            set { if (value != _HasAFMFSupport) { _HasAFMFSupport = value; OnPropertyChanged(nameof(HasAFMFSupport)); RefreshGraphicsOverrideRows(); } }
         }
 
         private bool _HasAFMF21Support;
         public bool HasAFMF21Support
         {
             get => _HasAFMF21Support;
-            set { if (value != _HasAFMF21Support) { _HasAFMF21Support = value; OnPropertyChanged(nameof(HasAFMF21Support)); } }
+            set { if (value != _HasAFMF21Support) { _HasAFMF21Support = value; OnPropertyChanged(nameof(HasAFMF21Support)); RefreshGraphicsOverrideRows(); } }
         }
 
         private bool _HasScalingModeSupport;
@@ -217,19 +217,22 @@ namespace HandheldCompanion.ViewModels
         private bool _HasIntegerScalingSupport;
         public bool HasIntegerScalingSupport
         {
-            get => _HasIntegerScalingSupport && _GPUScalingEnabled;
-            set { if (value != _HasIntegerScalingSupport) { _HasIntegerScalingSupport = value; OnPropertyChanged(nameof(HasIntegerScalingSupport)); } }
+            get => _HasIntegerScalingSupport;
+            set { if (value != _HasIntegerScalingSupport) { _HasIntegerScalingSupport = value; OnPropertyChanged(nameof(HasIntegerScalingSupport)); RefreshGraphicsOverrideRows(); } }
         }
 
         private bool _HasGPUScalingSupport;
         public bool HasGPUScalingSupport
         {
             get => _HasGPUScalingSupport;
-            set { if (value != _HasGPUScalingSupport) { _HasGPUScalingSupport = value; OnPropertyChanged(nameof(HasGPUScalingSupport)); } }
+            set { if (value != _HasGPUScalingSupport) { _HasGPUScalingSupport = value; OnPropertyChanged(nameof(HasGPUScalingSupport)); RefreshGraphicsOverrideRows(); } }
         }
 
         public bool GPUManagementEnabled => ManagerFactory.settingsManager.GetBoolean("GPUManagementEnabled");
         public bool PerformanceManagerEnabled => ManagerFactory.settingsManager.GetBoolean("PerformanceManagerEnabled");
+
+        // power slots hold performance and graphics settings
+        public bool ShowPowerSlots => PerformanceManagerEnabled || GPUManagementEnabled;
         public bool HasPrebuiltShaderDownload => SelectedProfile is not null && !string.IsNullOrEmpty(SelectedProfile.Executable) && GPUManager.GetCurrent() is GPU gpu && gpu.HasPrebuiltShaderDownload(out bool perAppSupported) && perAppSupported;
 
         public bool PrebuiltShaderDownloadEnabled
@@ -255,133 +258,6 @@ namespace HandheldCompanion.ViewModels
                     }
 
                     OnPropertyChanged(nameof(PrebuiltShaderDownloadEnabled));
-                }
-            }
-        }
-
-        private bool _GPUScalingEnabled;
-        public bool GPUScalingEnabled
-        {
-            get => _GPUScalingEnabled;
-            set
-            {
-                if (value != _GPUScalingEnabled)
-                {
-                    _GPUScalingEnabled = value;
-                    OnPropertyChanged(nameof(GPUScalingEnabled));
-
-                    // Only write back to profile if we're not loading from it
-                    if (!isLoadingProfile && SelectedProfile != null && SelectedProfile.GPUScaling != value)
-                    {
-                        SelectedProfile.GPUScaling = value;
-                        UpdateProfile();
-                    }
-                }
-            }
-        }
-
-        private bool _RSREnabled;
-        public bool RSREnabled
-        {
-            get => _RSREnabled;
-            set
-            {
-                if (value != _RSREnabled)
-                {
-                    _RSREnabled = value;
-                    OnPropertyChanged(nameof(RSREnabled));
-
-                    // Only write back to profile if we're not loading from it
-                    if (!isLoadingProfile && SelectedProfile != null && SelectedProfile.RSREnabled != value)
-                    {
-                        SelectedProfile.RSREnabled = value;
-                        UpdateProfile();
-                    }
-                }
-            }
-        }
-
-        private double _RSRValue;
-        public double RSRValue
-        {
-            get => _RSRValue;
-            set
-            {
-                if (value != _RSRValue)
-                {
-                    _RSRValue = value;
-                    OnPropertyChanged(nameof(RSRValue));
-
-                    // Only write back to profile if we're not loading from it
-                    if (!isLoadingProfile && SelectedProfile != null && SelectedProfile.RSRSharpness != (int)value)
-                    {
-                        SelectedProfile.RSRSharpness = (int)value;
-                        UpdateProfile();
-                    }
-                }
-            }
-        }
-
-        private bool _IntegerScalingEnabled;
-        public bool IntegerScalingEnabled
-        {
-            get => _IntegerScalingEnabled;
-            set
-            {
-                if (value != _IntegerScalingEnabled)
-                {
-                    _IntegerScalingEnabled = value;
-                    OnPropertyChanged(nameof(IntegerScalingEnabled));
-
-                    // Only write back to profile if we're not loading from it
-                    if (!isLoadingProfile && SelectedProfile != null && SelectedProfile.IntegerScalingEnabled != value)
-                    {
-                        SelectedProfile.IntegerScalingEnabled = value;
-                        RefreshDisplayModeOverrides();
-                        UpdateProfile();
-                    }
-                }
-            }
-        }
-
-        private bool _RISEnabled;
-        public bool RISEnabled
-        {
-            get => _RISEnabled;
-            set
-            {
-                if (value != _RISEnabled)
-                {
-                    _RISEnabled = value;
-                    OnPropertyChanged(nameof(RISEnabled));
-
-                    // Only write back to profile if we're not loading from it
-                    if (!isLoadingProfile && SelectedProfile != null && SelectedProfile.RISEnabled != value)
-                    {
-                        SelectedProfile.RISEnabled = value;
-                        UpdateProfile();
-                    }
-                }
-            }
-        }
-
-        private double _RISValue;
-        public double RISValue
-        {
-            get => _RISValue;
-            set
-            {
-                if (value != _RISValue)
-                {
-                    _RISValue = value;
-                    OnPropertyChanged(nameof(RISValue));
-
-                    // Only write back to profile if we're not loading from it
-                    if (!isLoadingProfile && SelectedProfile != null && SelectedProfile.RISSharpness != (int)value)
-                    {
-                        SelectedProfile.RISSharpness = (int)value;
-                        UpdateProfile();
-                    }
                 }
             }
         }
@@ -1048,52 +924,6 @@ namespace HandheldCompanion.ViewModels
             }
         }
 
-        public int IntegerScalingDividerIndex
-        {
-            get
-            {
-                if (SelectedProfile == null)
-                    return 0;
-
-                // Find the index of the ScreenDivider that matches the profile's divider value
-                var matchingDivider = IntegerScalingDividers.FirstOrDefault(d => d.Divider == SelectedProfile.IntegerScalingDivider);
-                return matchingDivider != null ? IntegerScalingDividers.IndexOf(matchingDivider) : 0;
-            }
-            set
-            {
-                if (SelectedProfile != null && value >= 0 && value < IntegerScalingDividers.Count)
-                {
-                    // Get the actual divider value from the selected index
-                    int newDividerValue = IntegerScalingDividers[value].Divider;
-
-                    if (SelectedProfile.IntegerScalingDivider != newDividerValue)
-                    {
-                        SelectedProfile.IntegerScalingDivider = newDividerValue;
-                        OnPropertyChanged(nameof(IntegerScalingDividerIndex));
-
-                        if (!isLoadingProfile)
-                            UpdateProfile();
-                    }
-                }
-            }
-        }
-
-        public int IntegerScalingTypeIndex
-        {
-            get => SelectedProfile?.IntegerScalingType ?? 0;
-            set
-            {
-                if (SelectedProfile != null && SelectedProfile.IntegerScalingType != (byte)value)
-                {
-                    SelectedProfile.IntegerScalingType = (byte)value;
-                    OnPropertyChanged(nameof(IntegerScalingTypeIndex));
-
-                    if (!isLoadingProfile)
-                        UpdateProfile();
-                }
-            }
-        }
-
         // Additional Profile Wrapper Properties
         public string ProfilePath
         {
@@ -1120,102 +950,6 @@ namespace HandheldCompanion.ViewModels
                 {
                     SelectedProfile.Whitelisted = value;
                     OnPropertyChanged(nameof(ProfileWhitelisted));
-
-                    if (!isLoadingProfile)
-                        UpdateProfile();
-                }
-            }
-        }
-
-        public int ScalingModeIndex
-        {
-            get => SelectedProfile?.ScalingMode ?? 0;
-            set
-            {
-                if (SelectedProfile != null && SelectedProfile.ScalingMode != value)
-                {
-                    SelectedProfile.ScalingMode = value;
-                    OnPropertyChanged(nameof(ScalingModeIndex));
-
-                    if (!isLoadingProfile)
-                        UpdateProfile();
-                }
-            }
-        }
-
-        public bool AFMFEnabled
-        {
-            get => SelectedProfile?.AFMFEnabled ?? false;
-            set
-            {
-                if (SelectedProfile != null && SelectedProfile.AFMFEnabled != value)
-                {
-                    SelectedProfile.AFMFEnabled = value;
-                    OnPropertyChanged(nameof(AFMFEnabled));
-
-                    if (!isLoadingProfile)
-                        UpdateProfile();
-                }
-            }
-        }
-
-        public int AFMFAlgorithm
-        {
-            get => SelectedProfile?.AFMFAlgorithm ?? 0;
-            set
-            {
-                if (SelectedProfile != null && SelectedProfile.AFMFAlgorithm != value)
-                {
-                    SelectedProfile.AFMFAlgorithm = value;
-                    OnPropertyChanged(nameof(AFMFAlgorithm));
-
-                    if (!isLoadingProfile)
-                        UpdateProfile();
-                }
-            }
-        }
-
-        public int AFMFSearchMode
-        {
-            get => SelectedProfile?.AFMFSearchMode ?? 0;
-            set
-            {
-                if (SelectedProfile != null && SelectedProfile.AFMFSearchMode != value)
-                {
-                    SelectedProfile.AFMFSearchMode = value;
-                    OnPropertyChanged(nameof(AFMFSearchMode));
-
-                    if (!isLoadingProfile)
-                        UpdateProfile();
-                }
-            }
-        }
-
-        public int AFMFPerformanceMode
-        {
-            get => SelectedProfile?.AFMFPerformanceMode ?? 0;
-            set
-            {
-                if (SelectedProfile != null && SelectedProfile.AFMFPerformanceMode != value)
-                {
-                    SelectedProfile.AFMFPerformanceMode = value;
-                    OnPropertyChanged(nameof(AFMFPerformanceMode));
-
-                    if (!isLoadingProfile)
-                        UpdateProfile();
-                }
-            }
-        }
-
-        public int AFMFFastMotionResponse
-        {
-            get => SelectedProfile?.AFMFFastMotionResponse ?? 0;
-            set
-            {
-                if (SelectedProfile != null && SelectedProfile.AFMFFastMotionResponse != value)
-                {
-                    SelectedProfile.AFMFFastMotionResponse = value;
-                    OnPropertyChanged(nameof(AFMFFastMotionResponse));
 
                     if (!isLoadingProfile)
                         UpdateProfile();
@@ -1802,7 +1536,7 @@ namespace HandheldCompanion.ViewModels
         }
 
         /// <summary>
-        /// Collapses the framerate limit, resolution and refresh rate rows of both power slots.
+        /// Collapses the framerate limit, resolution, refresh rate and graphics rows of both power slots.
         /// </summary>
         public void CollapseOverrideRows()
         {
@@ -1813,6 +1547,9 @@ namespace HandheldCompanion.ViewModels
             foreach (Dictionary<Guid, DisplayOverrideRow> rows in _displayOverrideRows)
                 foreach (DisplayOverrideRow row in rows.Values)
                     row.CollapseValueRows();
+
+            foreach (GraphicsOverrideRow row in AllGraphicsOverrideRows)
+                row.CollapseValueRows();
         }
 
         private PerformanceOverrides? GetPerformanceOverrides(int slot, bool create)
@@ -1859,13 +1596,9 @@ namespace HandheldCompanion.ViewModels
             if (overrides is null || overrides.FramerateMode == mode)
                 return;
 
-            // without a value of its own, start from the limit that applies right now (0 = Disabled);
-            // when RTSS keeps its own limit there is nothing to copy and the stored value is kept
-            if (mode == FramerateLimitMode.Override && overrides.FramerateValue <= 0)
-            {
-                (FramerateLimitMode currentMode, int currentValue, _) = ManagerFactory.powerProfileManager.ResolveFramerateLimit(SelectedProfile, slot, GetSlotPowerProfile(slot));
-                overrides.FramerateValue = currentMode == FramerateLimitMode.Override ? currentValue : 0;
-            }
+            // a new override starts from the limit that applies right now (0 = no limit), so switching alone changes nothing
+            if (mode == FramerateLimitMode.Override)
+                (_, overrides.FramerateValue, _) = ManagerFactory.powerProfileManager.ResolveFramerateLimit(SelectedProfile, slot, GetSlotPowerProfile(slot));
 
             _framerateCustomSelected[slot] = false;
             overrides.FramerateMode = mode;
@@ -2041,7 +1774,7 @@ namespace HandheldCompanion.ViewModels
                 : ManagerFactory.powerProfileManager.ResolveDisplayMode(SelectedProfile, slot, monitor.Id);
 
             // integer scaling owns the primary display resolution
-            bool resolutionLocked = monitor.IsPrimary && SelectedProfile?.IntegerScalingEnabled == true;
+            bool resolutionLocked = IsResolutionLocked(slot, monitor);
             (int width, int height) = resolved.HasResolution && !resolutionLocked
                 ? (resolved.Width, resolved.Height)
                 : (monitor.CurrentWidth, monitor.CurrentHeight);
@@ -2113,13 +1846,9 @@ namespace HandheldCompanion.ViewModels
                 return string.Empty;
 
             PowerProfile? powerProfile = GetSlotPowerProfile(slot);
-            (FramerateLimitMode mode, int value, _) = ManagerFactory.powerProfileManager.ResolveFramerateLimit(SelectedProfile, slot, powerProfile);
+            (_, int value, _) = ManagerFactory.powerProfileManager.ResolveFramerateLimit(SelectedProfile, slot, powerProfile);
 
-            string effective = mode != FramerateLimitMode.Override
-                ? Properties.Resources.ProfilesPage_FramerateRTSSLimit
-                : value > 0 ? $"{value} FPS" : Properties.Resources.ProfilesPage_FramerateNoLimit;
-
-            return effective;
+            return value > 0 ? $"{value} FPS" : Properties.Resources.ProfilesPage_FramerateNoLimit;
         }
 
         private void RefreshFramerateHints()
@@ -2159,7 +1888,8 @@ namespace HandheldCompanion.ViewModels
 
         private static readonly IReadOnlyList<DisplayModeOption> DefaultDisplayModeOptions =
         [
-            new(DisplayOverrideMode.Inherit, Properties.Resources.OverrideMode_NoChange),
+            // the saved system display mode is restored
+            new(DisplayOverrideMode.Inherit, Properties.Resources.OverrideMode_UseSystemSettings),
             new(DisplayOverrideMode.Override, Properties.Resources.OverrideMode_Override),
         ];
 
@@ -2254,10 +1984,10 @@ namespace HandheldCompanion.ViewModels
             return ManagerFactory.powerProfileManager.ResolveDisplayMode(SelectedProfile, slot, monitor.Id);
         }
 
-        // integer scaling owns the primary display resolution
-        private bool IsResolutionLocked(DisplayMonitorOption monitor)
+        // integer scaling owns the primary display resolution on the slots it resolves to on
+        private bool IsResolutionLocked(int slot, DisplayMonitorOption monitor)
         {
-            return SelectedProfile?.IntegerScalingEnabled == true && monitor.IsPrimary;
+            return monitor.IsPrimary && ResolveGraphics(slot).IntegerScaling.IsEnabled;
         }
 
         private DisplayOverrideMode GetResolutionMode(int slot, DisplayMonitorOption monitor)
@@ -2270,21 +2000,28 @@ namespace HandheldCompanion.ViewModels
             return GetDisplayModeOverride(slot, monitor, false)?.RefreshMode ?? DisplayOverrideMode.Inherit;
         }
 
-        // resolution the refresh rates are listed for: this layer, the inherited one, then the current mode
+        // resolution the refresh rates are listed for: this layer, the inherited one, then the system display mode
         private (int Width, int Height) GetEffectiveResolution(int slot, DisplayMonitorOption monitor)
         {
-            if (!IsResolutionLocked(monitor))
-            {
-                DisplayModeOverride? displayMode = GetDisplayModeOverride(slot, monitor, false);
-                if (displayMode?.HasResolution == true)
-                    return (displayMode.Width, displayMode.Height);
+            if (IsResolutionLocked(slot, monitor))
+                return (monitor.CurrentWidth, monitor.CurrentHeight);
 
-                ResolvedDisplayMode resolved = ResolveDisplayMode(slot, monitor);
-                if (resolved.HasResolution)
-                    return (resolved.Width, resolved.Height);
-            }
+            DisplayModeOverride? displayMode = GetDisplayModeOverride(slot, monitor, false);
+            if (displayMode?.HasResolution == true)
+                return (displayMode.Width, displayMode.Height);
 
-            return (monitor.CurrentWidth, monitor.CurrentHeight);
+            return GetInheritedResolution(slot, monitor);
+        }
+
+        // what this layer gets without its own resolution: the inherited one, then the system display mode
+        private (int Width, int Height) GetInheritedResolution(int slot, DisplayMonitorOption monitor)
+        {
+            ResolvedDisplayMode resolved = ResolveDisplayMode(slot, monitor);
+            if (resolved.HasResolution)
+                return (resolved.Width, resolved.Height);
+
+            (int width, int height, _) = GetSystemDisplayMode(monitor);
+            return (width, height);
         }
 
         private static DisplayResolutionOption? FindResolution(DisplayMonitorOption monitor, int width, int height)
@@ -2312,17 +2049,17 @@ namespace HandheldCompanion.ViewModels
 
         private void SetResolutionMode(int slot, DisplayMonitorOption monitor, DisplayOverrideMode mode)
         {
-            if (IsResolutionLocked(monitor))
+            if (IsResolutionLocked(slot, monitor))
                 return;
 
             DisplayModeOverride? displayMode = GetDisplayModeOverride(slot, monitor, true);
             if (displayMode is null || displayMode.ResolutionMode == mode)
                 return;
 
-            // start from the resolution that applies right now
-            if (mode == DisplayOverrideMode.Override && FindResolution(monitor, displayMode.Width, displayMode.Height) is null)
+            // a new override starts from the resolution that applies right now, so switching alone changes nothing
+            if (mode == DisplayOverrideMode.Override)
             {
-                (int width, int height) = GetEffectiveResolution(slot, monitor);
+                (int width, int height) = GetInheritedResolution(slot, monitor);
                 DisplayResolutionOption? resolution = FindResolution(monitor, width, height) ?? monitor.Resolutions.FirstOrDefault();
                 displayMode.Width = resolution?.Width ?? width;
                 displayMode.Height = resolution?.Height ?? height;
@@ -2347,7 +2084,7 @@ namespace HandheldCompanion.ViewModels
 
         private void SetSelectedResolution(int slot, DisplayMonitorOption monitor, string? key)
         {
-            if (string.IsNullOrEmpty(key) || IsResolutionLocked(monitor))
+            if (string.IsNullOrEmpty(key) || IsResolutionLocked(slot, monitor))
                 return;
 
             DisplayResolutionOption? resolution = monitor.Resolutions.FirstOrDefault(r => r.Key == key);
@@ -2377,16 +2114,12 @@ namespace HandheldCompanion.ViewModels
             if (displayMode is null || displayMode.RefreshMode == mode)
                 return;
 
-            // start from the refresh rate that applies right now
+            // a new override starts from the refresh rate that applies right now, so switching alone changes nothing
             if (mode == DisplayOverrideMode.Override)
             {
-                IReadOnlyList<DisplayRefreshOption> refreshRates = GetRefreshRates(slot, monitor);
-                if (displayMode.RefreshRate <= 0 || !refreshRates.Any(r => r.Frequency == displayMode.RefreshRate))
-                {
-                    ResolvedDisplayMode resolved = ResolveDisplayMode(slot, monitor);
-                    int frequency = resolved.HasRefreshRate ? resolved.RefreshRate : monitor.CurrentFrequency;
-                    displayMode.RefreshRate = SnapRefreshRate(refreshRates, frequency);
-                }
+                ResolvedDisplayMode resolved = ResolveDisplayMode(slot, monitor);
+                int frequency = resolved.HasRefreshRate ? resolved.RefreshRate : GetSystemDisplayMode(monitor).Frequency;
+                displayMode.RefreshRate = SnapRefreshRate(GetRefreshRates(slot, monitor), frequency);
             }
 
             displayMode.RefreshMode = mode;
@@ -2418,18 +2151,26 @@ namespace HandheldCompanion.ViewModels
                 UpdateProfile();
         }
 
+        private static (int Width, int Height, int Frequency) GetSystemDisplayMode(DisplayMonitorOption monitor)
+        {
+            return ManagerFactory.multimediaManager.GetSystemDisplayMode(monitor.Id, monitor.CurrentWidth, monitor.CurrentHeight, monitor.CurrentFrequency);
+        }
+
         private string GetResolutionHint(int slot, DisplayMonitorOption monitor)
         {
             if (SelectedProfile is null)
                 return string.Empty;
 
-            if (IsResolutionLocked(monitor))
+            if (IsResolutionLocked(slot, monitor))
                 return Properties.Resources.ProfilesPage_DisplayResolutionLocked;
 
+            // nothing inherited restores the system display mode
             ResolvedDisplayMode resolved = ResolveDisplayMode(slot, monitor);
-            return resolved.HasResolution
-                ? $"{resolved.Width} x {resolved.Height}"
-                : $"{monitor.CurrentWidth} x {monitor.CurrentHeight}";
+            if (resolved.HasResolution)
+                return $"{resolved.Width} x {resolved.Height}";
+
+            (int width, int height, _) = GetSystemDisplayMode(monitor);
+            return $"{width} x {height}";
         }
 
         private string GetRefreshHint(int slot, DisplayMonitorOption monitor)
@@ -2438,9 +2179,11 @@ namespace HandheldCompanion.ViewModels
                 return string.Empty;
 
             ResolvedDisplayMode resolved = ResolveDisplayMode(slot, monitor);
-            return resolved.HasRefreshRate
-                ? $"{resolved.RefreshRate} Hz"
-                : $"{monitor.CurrentFrequency} Hz";
+            if (resolved.HasRefreshRate)
+                return $"{resolved.RefreshRate} Hz";
+
+            (_, _, int frequency) = GetSystemDisplayMode(monitor);
+            return $"{frequency} Hz";
         }
 
         /// <summary>
@@ -2454,10 +2197,9 @@ namespace HandheldCompanion.ViewModels
         {
             DisplayModeOverride? displayMode = GetDisplayModeOverride(slot, monitor, false);
             ResolvedDisplayMode resolved = ResolveDisplayMode(slot, monitor);
-            (int systemWidth, int systemHeight, int systemFrequency) = ManagerFactory.multimediaManager.GetSystemDisplayMode(
-                monitor.Id, monitor.CurrentWidth, monitor.CurrentHeight, monitor.CurrentFrequency);
+            (int systemWidth, int systemHeight, int systemFrequency) = GetSystemDisplayMode(monitor);
 
-            bool locked = IsResolutionLocked(monitor);
+            bool locked = IsResolutionLocked(slot, monitor);
             bool resolutionOverride = !locked && displayMode?.ResolutionMode == DisplayOverrideMode.Override && displayMode.HasResolution;
 
             int width, height;
@@ -2628,8 +2370,8 @@ namespace HandheldCompanion.ViewModels
             public bool ShowResolutionValue => IsResolutionOverride && _isResolutionExpanded;
             public string ResolutionChevronGlyph => GetChevronGlyph(_isResolutionExpanded);
 
-            public bool IsResolutionModeEnabled => !_owner.IsResolutionLocked(Monitor);
-            public bool IsResolutionOverride => !_owner.IsResolutionLocked(Monitor) && _owner.GetResolutionMode(Slot, Monitor) == DisplayOverrideMode.Override;
+            public bool IsResolutionModeEnabled => !_owner.IsResolutionLocked(Slot, Monitor);
+            public bool IsResolutionOverride => !_owner.IsResolutionLocked(Slot, Monitor) && _owner.GetResolutionMode(Slot, Monitor) == DisplayOverrideMode.Override;
             public IReadOnlyList<DisplayResolutionOption> Resolutions => Monitor.Resolutions;
 
             public string? SelectedResolution
@@ -2720,6 +2462,370 @@ namespace HandheldCompanion.ViewModels
                 OnPropertyChanged(nameof(RefreshRates));
                 OnPropertyChanged(nameof(SelectedRefreshRate));
                 OnPropertyChanged(nameof(RefreshHint));
+            }
+        }
+        #endregion
+
+        #region Graphics overrides
+        // per power slot, each graphics group is a separate Inherit/Override field
+        public enum GraphicsGroup
+        {
+            Scaling,
+            RSR,
+            IntegerScaling,
+            RIS,
+            AFMF,
+        }
+
+        public sealed record GraphicsModeOption(GraphicsOverrideMode Mode, string Label);
+
+        private static readonly IReadOnlyList<GraphicsModeOption> GameGraphicsModeOptions =
+        [
+            new(GraphicsOverrideMode.Inherit, Properties.Resources.OverrideMode_UseDefaultProfile),
+            new(GraphicsOverrideMode.Override, Properties.Resources.OverrideMode_Override),
+        ];
+
+        public IReadOnlyList<GraphicsModeOption> GraphicsModeOptions => GameGraphicsModeOptions;
+
+        // the default profile is the graphics baseline, its groups always apply and have no mode to pick
+        private bool IsGraphicsBaseline => SelectedProfile?.Default == true;
+
+        // one row per graphics group and power slot
+        public IReadOnlyList<GraphicsOverrideRow> GraphicsOverrideRowsDC { get; private set; } = [];
+        public IReadOnlyList<GraphicsOverrideRow> GraphicsOverrideRowsAC { get; private set; } = [];
+
+        private void InitializeGraphicsOverrideRows()
+        {
+            GraphicsOverrideRowsDC = CreateGraphicsOverrideRows(FramerateSlotDC);
+            GraphicsOverrideRowsAC = CreateGraphicsOverrideRows(FramerateSlotAC);
+        }
+
+        private IReadOnlyList<GraphicsOverrideRow> CreateGraphicsOverrideRows(int slot)
+        {
+            return
+            [
+                new(this, slot, GraphicsGroup.Scaling, Properties.Resources.ProfilesPage_GPUScaling),
+                new(this, slot, GraphicsGroup.RSR, Properties.Resources.ProfilesPage_RSR),
+                new(this, slot, GraphicsGroup.IntegerScaling, Properties.Resources.ProfilesPage_IS),
+                new(this, slot, GraphicsGroup.RIS, Properties.Resources.ProfilesPage_ImageSharpening),
+                new(this, slot, GraphicsGroup.AFMF, Properties.Resources.ProfilesPage_AFMF),
+            ];
+        }
+
+        private IEnumerable<GraphicsOverrideRow> AllGraphicsOverrideRows => GraphicsOverrideRowsDC.Concat(GraphicsOverrideRowsAC);
+
+        private void RefreshGraphicsOverrideRows()
+        {
+            OnPropertyChanged(nameof(GraphicsModeOptions));
+            foreach (GraphicsOverrideRow row in AllGraphicsOverrideRows)
+                row.Refresh();
+        }
+
+        private GraphicsGroupOverride? GetGraphicsGroup(int slot, GraphicsGroup group, bool create)
+        {
+            GraphicsOverrides? graphics = GetPerformanceOverrides(slot, create)?.Graphics;
+            return group switch
+            {
+                GraphicsGroup.Scaling => graphics?.Scaling,
+                GraphicsGroup.RSR => graphics?.RSR,
+                GraphicsGroup.IntegerScaling => graphics?.IntegerScaling,
+                GraphicsGroup.RIS => graphics?.RIS,
+                GraphicsGroup.AFMF => graphics?.AFMF,
+                _ => null,
+            };
+        }
+
+        private ResolvedGraphics ResolveGraphics(int slot)
+        {
+            if (SelectedProfile is null)
+                return default;
+
+            return ManagerFactory.powerProfileManager.ResolveGraphics(SelectedProfile, slot);
+        }
+
+        private void SetGraphicsMode(int slot, GraphicsGroup group, GraphicsOverrideMode mode)
+        {
+            // the group still inherits here, so the resolved values are the inherited ones
+            GraphicsGroupOverride? inherited = GetResolvedGraphicsValues(ResolveGraphics(slot), group);
+
+            SetGraphicsValue<GraphicsGroupOverride>(slot, group, g =>
+            {
+                // a new override starts from what the slot inherits, nothing inherited keeps the stored values
+                if (!g.IsOverride && mode == GraphicsOverrideMode.Override && inherited is not null)
+                    g.CopyValuesFrom(inherited);
+
+                g.Mode = mode;
+            });
+        }
+
+        // effective values of one group, null when no layer sets it
+        private static GraphicsGroupOverride? GetResolvedGraphicsValues(ResolvedGraphics resolved, GraphicsGroup group)
+        {
+            return group switch
+            {
+                GraphicsGroup.Scaling => resolved.Scaling.IsSet ? resolved.Scaling.Values : null,
+                GraphicsGroup.RSR => resolved.RSR.IsSet ? resolved.RSR.Values : null,
+                GraphicsGroup.IntegerScaling => resolved.IntegerScaling.IsSet ? resolved.IntegerScaling.Values : null,
+                GraphicsGroup.RIS => resolved.RIS.IsSet ? resolved.RIS.Values : null,
+                GraphicsGroup.AFMF => resolved.AFMF.IsSet ? resolved.AFMF.Values : null,
+                _ => null,
+            };
+        }
+
+        private void SetGraphicsValue<T>(int slot, GraphicsGroup group, Action<T> apply) where T : GraphicsGroupOverride
+        {
+            if (isLoadingProfile || SelectedProfile is null)
+                return;
+
+            if (GetGraphicsGroup(slot, group, true) is not T values)
+                return;
+
+            apply(values);
+
+            if (IsGraphicsBaseline)
+                values.Mode = GraphicsOverrideMode.Override;
+
+            // scaling gates RSR and integer scaling, integer scaling locks the primary display resolution
+            RefreshGraphicsOverrideRows();
+            if (group is GraphicsGroup.Scaling or GraphicsGroup.IntegerScaling)
+                RefreshDisplayModeOverrides();
+
+            UpdateProfile();
+        }
+
+        // same capability gating as before the move to power slots
+        private bool IsGraphicsGroupVisible(GraphicsGroup group)
+        {
+            return group switch
+            {
+                GraphicsGroup.RSR or GraphicsGroup.AFMF => IsAMDGPU,
+                _ => true,
+            };
+        }
+
+        private bool IsGraphicsGroupSupported(int slot, GraphicsGroup group)
+        {
+            return group switch
+            {
+                GraphicsGroup.Scaling or GraphicsGroup.RIS => HasGPUScalingSupport,
+                GraphicsGroup.RSR => HasRSRSupport && NeedsGPUScalingMet(slot),
+                GraphicsGroup.IntegerScaling => HasIntegerScalingSupport && NeedsGPUScalingMet(slot),
+                GraphicsGroup.AFMF => HasAFMFSupport,
+                _ => false,
+            };
+        }
+
+        // RSR and integer scaling need GPU scaling on the same power slot
+        private bool NeedsGPUScalingMet(int slot)
+        {
+            return ResolveGraphics(slot).Scaling.IsEnabled;
+        }
+
+        private string GetGraphicsHint(int slot, GraphicsGroup group)
+        {
+            if (SelectedProfile is null)
+                return string.Empty;
+
+            if ((group is GraphicsGroup.RSR or GraphicsGroup.IntegerScaling) && !NeedsGPUScalingMet(slot))
+                return Properties.Resources.ProfilesPage_GraphicsNeedsGPUScaling;
+
+            // effective state on this slot, only unset while the default profile isn't loaded
+            GraphicsGroupOverride? values = GetResolvedGraphicsValues(ResolveGraphics(slot), group);
+            if (values is null)
+                return string.Empty;
+
+            return values.Enabled ? Properties.Resources.ProfilesPage_GraphicsOn : Properties.Resources.ProfilesPage_GraphicsOff;
+        }
+
+        /// <summary>
+        /// One graphics group on one power slot: a mode row, and its value rows when overridden.
+        /// </summary>
+        public sealed class GraphicsOverrideRow : BaseViewModel
+        {
+            private readonly ProfilesPageViewModel _owner;
+            private bool _isExpanded;
+
+            public GraphicsOverrideRow(ProfilesPageViewModel owner, int slot, GraphicsGroup group, string header)
+            {
+                _owner = owner;
+                Slot = slot;
+                Group = group;
+                Header = header;
+                ToggleExpandedCommand = new DelegateCommand(() => IsExpanded = !IsExpanded);
+            }
+
+            public int Slot { get; }
+            public GraphicsGroup Group { get; }
+            public string Header { get; }
+
+            public bool IsVisible => _owner.IsGraphicsGroupVisible(Group);
+            public bool IsSupported => _owner.IsGraphicsGroupSupported(Slot, Group);
+            public string Hint => _owner.GetGraphicsHint(Slot, Group);
+            public IReadOnlyList<GraphicsModeOption> ModeOptions => _owner.GraphicsModeOptions;
+            public bool ShowModeSelector => !_owner.IsGraphicsBaseline;
+
+            private GraphicsGroupOverride? Values => _owner.GetGraphicsGroup(Slot, Group, false);
+
+            public GraphicsOverrideMode Mode
+            {
+                get => _owner.IsGraphicsBaseline ? GraphicsOverrideMode.Override : Values?.Mode ?? GraphicsOverrideMode.Inherit;
+                set
+                {
+                    bool wasOverride = IsOverride;
+                    _owner.SetGraphicsMode(Slot, Group, value);
+
+                    // switched by the user: Override opens its value rows
+                    if (IsOverride != wasOverride)
+                        IsExpanded = IsOverride;
+                }
+            }
+
+            public bool IsOverride => Mode == GraphicsOverrideMode.Override;
+
+            // an overridden group folds its value rows under the mode row
+            public ICommand ToggleExpandedCommand { get; }
+
+            public bool IsExpanded
+            {
+                get => _isExpanded;
+                set
+                {
+                    if (SetProperty(ref _isExpanded, value))
+                        RefreshValueRows();
+                }
+            }
+
+            public string ChevronGlyph => GetChevronGlyph(_isExpanded);
+            public bool ShowValues => IsOverride && _isExpanded;
+            public bool ShowScalingMode => ShowValues && Group == GraphicsGroup.Scaling;
+            public bool ShowSharpness => ShowValues && (Group is GraphicsGroup.RSR or GraphicsGroup.RIS);
+            public bool ShowIntegerScaling => ShowValues && Group == GraphicsGroup.IntegerScaling;
+            public bool ShowAFMF21 => ShowValues && Group == GraphicsGroup.AFMF && _owner.HasAFMF21Support;
+
+            public string SharpnessHeader => Group == GraphicsGroup.RSR
+                ? Properties.Resources.ProfilesPage_ResolutionScale
+                : Properties.Resources.ProfilesPage_SharpeningScale;
+
+            public bool IsEnabled
+            {
+                get => Values?.Enabled ?? false;
+                set => _owner.SetGraphicsValue<GraphicsGroupOverride>(Slot, Group, g => g.Enabled = value);
+            }
+
+            public int ScalingMode
+            {
+                get => (Values as ScalingOverride)?.ScalingMode ?? 0;
+                set => _owner.SetGraphicsValue<ScalingOverride>(Slot, Group, g => g.ScalingMode = value);
+            }
+
+            // center scaling doesn't work with RSR
+            public bool IsCenterScalingEnabled => !_owner.ResolveGraphics(Slot).RSR.IsEnabled;
+
+            public double Sharpness
+            {
+                get => Values switch
+                {
+                    RSROverride rsr => rsr.Sharpness,
+                    RISOverride ris => ris.Sharpness,
+                    _ => 0,
+                };
+                set
+                {
+                    if (Group == GraphicsGroup.RSR)
+                        _owner.SetGraphicsValue<RSROverride>(Slot, Group, g => g.Sharpness = (int)value);
+                    else
+                        _owner.SetGraphicsValue<RISOverride>(Slot, Group, g => g.Sharpness = (int)value);
+                }
+            }
+
+            // dividers of the primary display, integer scaling only drives that one
+            public ObservableCollection<ScreenDividerViewModel> Dividers => _owner.IntegerScalingDividers;
+
+            public int DividerIndex
+            {
+                get
+                {
+                    int divider = (Values as IntegerScalingOverride)?.Divider ?? 1;
+                    ScreenDividerViewModel? match = Dividers.FirstOrDefault(d => d.Divider == divider);
+                    return match is not null ? Dividers.IndexOf(match) : 0;
+                }
+                set
+                {
+                    if (value < 0 || value >= Dividers.Count)
+                        return;
+
+                    int divider = Dividers[value].Divider;
+                    _owner.SetGraphicsValue<IntegerScalingOverride>(Slot, Group, g => g.Divider = divider);
+                }
+            }
+
+            public int IntegerScalingType
+            {
+                get => (Values as IntegerScalingOverride)?.Type ?? 0;
+                set => _owner.SetGraphicsValue<IntegerScalingOverride>(Slot, Group, g => g.Type = (byte)value);
+            }
+
+            public int AFMFAlgorithm
+            {
+                get => (Values as AFMFOverride)?.Algorithm ?? 0;
+                set => _owner.SetGraphicsValue<AFMFOverride>(Slot, Group, g => g.Algorithm = value);
+            }
+
+            public int AFMFSearchMode
+            {
+                get => (Values as AFMFOverride)?.SearchMode ?? 0;
+                set => _owner.SetGraphicsValue<AFMFOverride>(Slot, Group, g => g.SearchMode = value);
+            }
+
+            public int AFMFPerformanceMode
+            {
+                get => (Values as AFMFOverride)?.PerformanceMode ?? 0;
+                set => _owner.SetGraphicsValue<AFMFOverride>(Slot, Group, g => g.PerformanceMode = value);
+            }
+
+            public int AFMFFastMotionResponse
+            {
+                get => (Values as AFMFOverride)?.FastMotionResponse ?? 0;
+                set => _owner.SetGraphicsValue<AFMFOverride>(Slot, Group, g => g.FastMotionResponse = value);
+            }
+
+            internal void CollapseValueRows()
+            {
+                IsExpanded = false;
+            }
+
+            private void RefreshValueRows()
+            {
+                OnPropertyChanged(nameof(ChevronGlyph));
+                OnPropertyChanged(nameof(ShowValues));
+                OnPropertyChanged(nameof(ShowScalingMode));
+                OnPropertyChanged(nameof(ShowSharpness));
+                OnPropertyChanged(nameof(ShowIntegerScaling));
+                OnPropertyChanged(nameof(ShowAFMF21));
+            }
+
+            internal void Refresh()
+            {
+                OnPropertyChanged(nameof(IsVisible));
+                OnPropertyChanged(nameof(IsSupported));
+                OnPropertyChanged(nameof(Hint));
+                OnPropertyChanged(nameof(ModeOptions));
+                OnPropertyChanged(nameof(ShowModeSelector));
+                OnPropertyChanged(nameof(Mode));
+                OnPropertyChanged(nameof(IsOverride));
+                RefreshValueRows();
+                OnPropertyChanged(nameof(IsEnabled));
+                OnPropertyChanged(nameof(ScalingMode));
+                OnPropertyChanged(nameof(IsCenterScalingEnabled));
+                OnPropertyChanged(nameof(Sharpness));
+                // option lists before their selections
+                OnPropertyChanged(nameof(Dividers));
+                OnPropertyChanged(nameof(DividerIndex));
+                OnPropertyChanged(nameof(IntegerScalingType));
+                OnPropertyChanged(nameof(AFMFAlgorithm));
+                OnPropertyChanged(nameof(AFMFSearchMode));
+                OnPropertyChanged(nameof(AFMFPerformanceMode));
+                OnPropertyChanged(nameof(AFMFFastMotionResponse));
             }
         }
         #endregion
@@ -2989,6 +3095,8 @@ namespace HandheldCompanion.ViewModels
 
         private void InitializeCommon()
         {
+            InitializeGraphicsOverrideRows();
+
             GyroHotkey = new(gyroButtonFlags) { IsInternal = true, Name = "HOTKEY_GYRO_ACTIVATION_QP" };
             ManagerFactory.hotkeysManager.UpdateOrCreateHotkey(GyroHotkey);
 
@@ -3596,6 +3704,7 @@ namespace HandheldCompanion.ViewModels
             ManagerFactory.settingsManager.SettingValueChanged += SettingsManager_SettingValueChanged;
             OnPropertyChanged(nameof(GPUManagementEnabled));
             OnPropertyChanged(nameof(PerformanceManagerEnabled));
+            OnPropertyChanged(nameof(ShowPowerSlots));
         }
 
         private void SettingsManager_SettingValueChanged(string name, object? value, bool temporary, bool initializing)
@@ -3604,6 +3713,8 @@ namespace HandheldCompanion.ViewModels
                 OnPropertyChanged(nameof(GPUManagementEnabled));
             if (name == "PerformanceManagerEnabled")
                 OnPropertyChanged(nameof(PerformanceManagerEnabled));
+            if (name is "GPUManagementEnabled" or "PerformanceManagerEnabled")
+                OnPropertyChanged(nameof(ShowPowerSlots));
         }
 
         private void QueryPlatforms()
@@ -3747,6 +3858,8 @@ namespace HandheldCompanion.ViewModels
                         foreach (var screenDivider in desktopScreen.screenDividers)
                             IntegerScalingDividers.Add(new ScreenDividerViewModel(screenDivider));
                     }
+
+                    RefreshGraphicsOverrideRows();
                 }
             }
             catch { }
@@ -4046,6 +4159,7 @@ namespace HandheldCompanion.ViewModels
             {
                 RefreshFramerateHints();
                 UIHelper.TryBeginInvoke(RefreshDisplayModeOverrides);
+                UIHelper.TryBeginInvoke(RefreshGraphicsOverrideRows);
             }
 
             isCurrent |= SelectedProfile?.Guid == profile.Guid;
@@ -4288,13 +4402,6 @@ namespace HandheldCompanion.ViewModels
 
             using (new LoadingScope(this))
             {
-                GPUScalingEnabled = SelectedProfile.GPUScaling;
-                RSREnabled = SelectedProfile.RSREnabled;
-                RSRValue = SelectedProfile.RSRSharpness;
-                IntegerScalingEnabled = SelectedProfile.IntegerScalingEnabled;
-                RISEnabled = SelectedProfile.RISEnabled;
-                RISValue = SelectedProfile.RISSharpness;
-
                 if (SelectedProfile.Layout.GyroLayout.TryGetValue(AxisLayoutFlags.Gyroscope, out IActions? gyroActions))
                 {
                     if (gyroActions is AxisActions axisActions)
@@ -4353,6 +4460,7 @@ namespace HandheldCompanion.ViewModels
                 Array.Clear(_framerateCustomSelected);
                 RefreshFramerateOverrides();
                 RefreshDisplayModeOverrides();
+                RefreshGraphicsOverrideRows();
                 UpdateControlsEnabledState();
                 NotifyWrapperProperties();
             }
@@ -4395,16 +4503,8 @@ namespace HandheldCompanion.ViewModels
             OnPropertyChanged(nameof(SteeringAxisIndex));
             OnPropertyChanged(nameof(HIDModeIndex));
             OnPropertyChanged(nameof(XInputPlusIndex));
-            OnPropertyChanged(nameof(IntegerScalingDividerIndex));
-            OnPropertyChanged(nameof(IntegerScalingTypeIndex));
-            OnPropertyChanged(nameof(ScalingModeIndex));
             OnPropertyChanged(nameof(ProfilePath));
             OnPropertyChanged(nameof(ProfileWhitelisted));
-            OnPropertyChanged(nameof(AFMFEnabled));
-            OnPropertyChanged(nameof(AFMFAlgorithm));
-            OnPropertyChanged(nameof(AFMFSearchMode));
-            OnPropertyChanged(nameof(AFMFPerformanceMode));
-            OnPropertyChanged(nameof(AFMFFastMotionResponse));
             OnPropertyChanged(nameof(ShowInLibrary));
             OnPropertyChanged(nameof(MotionInvertHorizontal));
             OnPropertyChanged(nameof(MotionInvertVertical));

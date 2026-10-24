@@ -9237,15 +9237,6 @@ namespace HandheldCompanion.Properties {
         }
         
         /// <summary>
-        ///   Looks up a localized string similar to No change.
-        /// </summary>
-        public static string OverrideMode_NoChange {
-            get {
-                return ResourceManager.GetString("OverrideMode_NoChange", resourceCulture);
-            }
-        }
-        
-        /// <summary>
         ///   Looks up a localized string similar to Override.
         /// </summary>
         public static string OverrideMode_Override {
@@ -9269,6 +9260,15 @@ namespace HandheldCompanion.Properties {
         public static string OverrideMode_UsePowerProfile {
             get {
                 return ResourceManager.GetString("OverrideMode_UsePowerProfile", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Looks up a localized string similar to Use system settings.
+        /// </summary>
+        public static string OverrideMode_UseSystemSettings {
+            get {
+                return ResourceManager.GetString("OverrideMode_UseSystemSettings", resourceCulture);
             }
         }
         
@@ -10722,15 +10722,6 @@ namespace HandheldCompanion.Properties {
         }
         
         /// <summary>
-        ///   Looks up a localized string similar to RTSS limit.
-        /// </summary>
-        public static string ProfilesPage_FramerateRTSSLimit {
-            get {
-                return ResourceManager.GetString("ProfilesPage_FramerateRTSSLimit", resourceCulture);
-            }
-        }
-        
-        /// <summary>
         ///   Looks up a localized string similar to Global settings.
         /// </summary>
         public static string ProfilesPage_GlobalSettings {
@@ -10808,6 +10799,42 @@ namespace HandheldCompanion.Properties {
         public static string ProfilesPage_GraphicsSetting_Title {
             get {
                 return ResourceManager.GetString("ProfilesPage_GraphicsSetting_Title", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Looks up a localized string similar to Enabled.
+        /// </summary>
+        public static string ProfilesPage_GraphicsEnabled {
+            get {
+                return ResourceManager.GetString("ProfilesPage_GraphicsEnabled", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Looks up a localized string similar to Needs GPU scaling on this power state.
+        /// </summary>
+        public static string ProfilesPage_GraphicsNeedsGPUScaling {
+            get {
+                return ResourceManager.GetString("ProfilesPage_GraphicsNeedsGPUScaling", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Looks up a localized string similar to Off.
+        /// </summary>
+        public static string ProfilesPage_GraphicsOff {
+            get {
+                return ResourceManager.GetString("ProfilesPage_GraphicsOff", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Looks up a localized string similar to On.
+        /// </summary>
+        public static string ProfilesPage_GraphicsOn {
+            get {
+                return ResourceManager.GetString("ProfilesPage_GraphicsOn", resourceCulture);
             }
         }
         

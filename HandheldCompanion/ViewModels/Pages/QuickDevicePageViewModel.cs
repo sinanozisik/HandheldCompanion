@@ -485,11 +485,10 @@ namespace HandheldCompanion.ViewModels
             // manage events
             ManagerFactory.profileManager.Applied += ProfileManager_Applied;
             ManagerFactory.profileManager.Updated += ProfileManager_Updated;
-            ManagerFactory.profileManager.Discarded += ProfileManager_Discarded;
             ManagerFactory.profileManager.LastMonitorChanged += ProfileManager_LastMonitorChanged;
 
             // the power state picks the profile slot a change is stored in
-            ManagerFactory.powerProfileManager.Applied += PowerProfileManager_Applied;
+            ManagerFactory.powerProfileManager.OverridesApplied += PowerProfileManager_OverridesApplied;
 
             ProfileManager_Applied(ManagerFactory.profileManager.GetCurrent(), UpdateSource.Background);
         }
@@ -571,21 +570,6 @@ namespace HandheldCompanion.ViewModels
             // raised for any display change with the primary display as argument, re-read the selected monitor
             UIHelper.TryBeginInvoke(() =>
             {
-                // integer scaling keeps the primary display at the profile resolution
-                Profile? currentProfile = ManagerFactory.profileManager.GetCurrent();
-                if (currentProfile is not null && currentProfile.IntegerScalingEnabled)
-                {
-                    isLoadingDisplay = true;
-                    try
-                    {
-                        ProfileManager_Applied(currentProfile, UpdateSource.Background);
-                    }
-                    finally
-                    {
-                        isLoadingDisplay = false;
-                    }
-                }
-
                 QueueDisplayRefresh();
             });
         }
@@ -767,9 +751,7 @@ namespace HandheldCompanion.ViewModels
             if (screen is null)
                 return;
 
-            Profile? currentProfile = ManagerFactory.profileManager.IsReady ? ManagerFactory.profileManager.GetCurrent() : null;
-            if (currentProfile is not null)
-                UpdateDisplayOverrideUI(currentProfile);
+            UpdateDisplayOverrideUI();
 
             isLoadingDisplay = true;
             try
@@ -799,7 +781,7 @@ namespace HandheldCompanion.ViewModels
                 }
 
                 // integer scaling drives the primary display resolution, leave the selection alone
-                if (currentProfile?.IntegerScalingEnabled == true && screen.IsPrimary)
+                if (IsIntegerScalingActive() && screen.IsPrimary)
                     return;
 
                 ScreenResolution? currentResolution = screen.GetResolution();
@@ -880,20 +862,8 @@ namespace HandheldCompanion.ViewModels
 
         private void ProfileManager_Applied(Profile profile, UpdateSource source)
         {
-            // Go to profile integer scaling resolution
-            if (profile.IntegerScalingEnabled)
-            {
-                DesktopScreen? desktopScreen = ManagerFactory.multimediaManager.PrimaryDesktop;
-                if (desktopScreen == null)
-                    return;
-
-                ScreenDivider? profileResolution = desktopScreen.screenDividers.FirstOrDefault(d => d.divider == profile.IntegerScalingDivider);
-                if (profileResolution is not null)
-                    SetResolution(profileResolution.resolution);
-            }
-
             // Update UI
-            UpdateDisplayOverrideUI(profile);
+            UpdateDisplayOverrideUI();
 
             // default monitor, save note and shown mode depend on the applied profile
             QueueDisplayRefresh();
@@ -913,7 +883,7 @@ namespace HandheldCompanion.ViewModels
                 return;
 
             // Update UI based on the updated profile's integer scaling state
-            UpdateDisplayOverrideUI(profile);
+            UpdateDisplayOverrideUI();
             QueueDisplayRefresh();
         }
 
@@ -923,54 +893,32 @@ namespace HandheldCompanion.ViewModels
             QueueDisplayRefresh();
         }
 
-        private void PowerProfileManager_Applied(PowerProfile profile, UpdateSource source)
+        private void PowerProfileManager_OverridesApplied(Profile gameProfile, int powerLineStatus, UpdateSource source)
         {
             // power state changes switch the profile slot
             QueueDisplayRefresh();
         }
 
-        private void UpdateDisplayOverrideUI(Profile profile)
+        // integer scaling of the applied profile and power state drives the primary display resolution
+        private static bool IsIntegerScalingActive()
+        {
+            return ManagerFactory.powerProfileManager.IsReady
+                && ManagerFactory.powerProfileManager.GetGraphics().IntegerScaling.IsEnabled;
+        }
+
+        private void UpdateDisplayOverrideUI()
         {
             isLoadingDisplay = true;
             try
             {
                 // integer scaling only drives the primary display
-                var canChangeDisplay = !(profile.IntegerScalingEnabled && IsSelectedMonitorPrimary());
+                var canChangeDisplay = !(IsIntegerScalingActive() && IsSelectedMonitorPrimary());
                 IsDisplayStackEnabled = canChangeDisplay;
                 ResolutionOverrideStackVisibility = canChangeDisplay ? Visibility.Collapsed : Visibility.Visible;
             }
             finally
             {
                 isLoadingDisplay = false;
-            }
-        }
-
-        private void ProfileManager_Discarded(Profile profile, bool swapped, Profile nextProfile)
-        {
-            // Don't bother discarding settings, new one will be enforced shortly
-            if (swapped && nextProfile.IntegerScalingEnabled)
-                return;
-
-            if (profile.IntegerScalingEnabled)
-            {
-                isLoadingDisplay = true;
-                try
-                {
-                    IsDisplayStackEnabled = true;
-                    ResolutionOverrideStackVisibility = Visibility.Collapsed;
-                }
-                finally
-                {
-                    isLoadingDisplay = false;
-                }
-
-                // Restore default resolution by reapplying current selection
-                if (profile.IntegerScalingDivider != 1 && SelectedResolution != null)
-                {
-                    DesktopScreen? desktopScreen = ManagerFactory.multimediaManager.PrimaryDesktop;
-                    if (desktopScreen != null)
-                        SetResolution(desktopScreen.GetResolution());
-                }
             }
         }
 
@@ -1076,7 +1024,7 @@ namespace HandheldCompanion.ViewModels
                 if (gameProfile is not null && monitorId != Guid.Empty)
                 {
                     // integer scaling drives the primary display resolution
-                    if (resolutionChanged && gameProfile.IntegerScalingEnabled && screen.IsPrimary)
+                    if (resolutionChanged && screen.IsPrimary && ManagerFactory.powerProfileManager.ResolveGraphics(gameProfile, slot).IntegerScaling.IsEnabled)
                         return;
 
                     bool changed = resolutionChanged
@@ -1238,9 +1186,8 @@ namespace HandheldCompanion.ViewModels
                 ManagerFactory.profileManager.Initialized -= ProfileManager_Initialized;
                 ManagerFactory.profileManager.Applied -= ProfileManager_Applied;
                 ManagerFactory.profileManager.Updated -= ProfileManager_Updated;
-                ManagerFactory.profileManager.Discarded -= ProfileManager_Discarded;
                 ManagerFactory.profileManager.LastMonitorChanged -= ProfileManager_LastMonitorChanged;
-                ManagerFactory.powerProfileManager.Applied -= PowerProfileManager_Applied;
+                ManagerFactory.powerProfileManager.OverridesApplied -= PowerProfileManager_OverridesApplied;
                 NightLight.Toggled -= NightLight_Toggled;
 
                 // Unhook from Radio StateChanged events
