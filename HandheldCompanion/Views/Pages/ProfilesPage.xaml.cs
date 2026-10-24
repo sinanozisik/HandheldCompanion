@@ -44,8 +44,6 @@ public partial class ProfilesPage : Page
         // monitors and refresh rates may have changed while the page was hidden
         Loaded += (_, _) =>
         {
-            // expandable override rows start collapsed whenever the page is opened
-            viewModel.CollapseOverrideRows();
             viewModel.RefreshDisplayState();
         };
 

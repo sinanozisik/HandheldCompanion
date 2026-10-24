@@ -17,6 +17,7 @@ using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.ComponentModel;
+using System.Globalization;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
@@ -1393,20 +1394,8 @@ namespace HandheldCompanion.ViewModels
         private const int FramerateSlotDC = 0;
         private const int FramerateSlotAC = 1;
 
-        private static readonly IReadOnlyList<FramerateModeOption> GameFramerateModeOptions =
-        [
-            new(FramerateLimitMode.Inherit, Properties.Resources.OverrideMode_UseDefaultProfile),
-            new(FramerateLimitMode.Override, Properties.Resources.OverrideMode_Override),
-        ];
-
-        private static readonly IReadOnlyList<FramerateModeOption> DefaultFramerateModeOptions =
-        [
-            new(FramerateLimitMode.Inherit, Properties.Resources.OverrideMode_UsePowerProfile),
-            new(FramerateLimitMode.Override, Properties.Resources.OverrideMode_Override),
-        ];
-
-        public IReadOnlyList<FramerateModeOption> FramerateModeOptions =>
-            SelectedProfile?.Default == true ? DefaultFramerateModeOptions : GameFramerateModeOptions;
+        // combo key of the Custom entry, the preset entries use their limit
+        private const string FramerateCustomKey = "custom";
 
         // same choices as the power profile page: presets with Disabled (0) first, then Custom.
         // Each slot lists the presets of the refresh rate that applies while the game runs on that power state.
@@ -1418,139 +1407,51 @@ namespace HandheldCompanion.ViewModels
         private readonly int[] _framerateLimitsHz = new int[2];
         private readonly int[] _framerateCustomMaximum = [60, 60];
 
-        public IReadOnlyList<ScreenFramelimitViewModel> FramerateLimitsDC => _framerateLimits[FramerateSlotDC];
-        public IReadOnlyList<ScreenFramelimitViewModel> FramerateLimitsAC => _framerateLimits[FramerateSlotAC];
+        private int GetFramerateCustomMaximum(int slot) => Math.Max(ScreenFramelimitViewModel.CustomMinimum, _framerateCustomMaximum[slot]);
 
-        // bound through SelectedValue (SelectionKey): the preset lists are rebuilt when the refresh rate changes,
-        // a reference bound SelectedItem loses the selection when its list is replaced
-        public int SelectedFrameLimitKeyDC
-        {
-            get => GetSelectedFrameLimit(FramerateSlotDC)?.SelectionKey ?? 0;
-            set => SetSelectedFrameLimitKey(FramerateSlotDC, value);
-        }
-
-        public int SelectedFrameLimitKeyAC
-        {
-            get => GetSelectedFrameLimit(FramerateSlotAC)?.SelectionKey ?? 0;
-            set => SetSelectedFrameLimitKey(FramerateSlotAC, value);
-        }
-
-        private void SetSelectedFrameLimitKey(int slot, int key)
-        {
-            ScreenFramelimitViewModel? frameLimit = _framerateLimits[slot].FirstOrDefault(vm => vm.SelectionKey == key);
-            if (frameLimit is not null && frameLimit != GetSelectedFrameLimit(slot))
-                SetSelectedFrameLimit(slot, frameLimit);
-        }
-
-        public int FramerateCustomMinimum => ScreenFramelimitViewModel.CustomMinimum;
-        public int FramerateCustomMaximumDC => GetFramerateCustomMaximum(FramerateSlotDC);
-        public int FramerateCustomMaximumAC => GetFramerateCustomMaximum(FramerateSlotAC);
-
-        private int GetFramerateCustomMaximum(int slot) => Math.Max(FramerateCustomMinimum, _framerateCustomMaximum[slot]);
-
-        // Custom was picked for a slot, its value may still match a preset
+        // Custom was picked for a slot, its value may still match a preset.
+        // This is view state only (not stored in the profile): it belongs to the profile it was picked on
+        // and to the value written with it, so a reload of that same profile keeps Custom open.
         private readonly bool[] _framerateCustomSelected = new bool[2];
+        private readonly int[] _framerateCustomValue = new int[2];
+        private Guid _framerateCustomProfile = Guid.Empty;
 
-        // bound through SelectedValue so the selection survives the options list being swapped
-        // (game profile vs default profile labels); a missing entry reads as Inherit
-        public FramerateLimitMode FramerateModeDC
+        private void MarkFramerateCustom(int slot, int value)
         {
-            get => GetFramerateMode(FramerateSlotDC);
-            set => SetFramerateMode(FramerateSlotDC, value);
-        }
-
-        public FramerateLimitMode FramerateModeAC
-        {
-            get => GetFramerateMode(FramerateSlotAC);
-            set => SetFramerateMode(FramerateSlotAC, value);
-        }
-
-        public bool IsFramerateOverrideDC => GetFramerateMode(FramerateSlotDC) == FramerateLimitMode.Override;
-        public bool IsFramerateOverrideAC => GetFramerateMode(FramerateSlotAC) == FramerateLimitMode.Override;
-
-        public ScreenFramelimitViewModel? SelectedFrameLimitDC
-        {
-            get => GetSelectedFrameLimit(FramerateSlotDC);
-            set => SetSelectedFrameLimit(FramerateSlotDC, value);
-        }
-
-        public ScreenFramelimitViewModel? SelectedFrameLimitAC
-        {
-            get => GetSelectedFrameLimit(FramerateSlotAC);
-            set => SetSelectedFrameLimit(FramerateSlotAC, value);
-        }
-
-        public bool IsFramerateCustomDC => IsFramerateOverrideDC && IsCustomFrameLimit(FramerateSlotDC);
-        public bool IsFramerateCustomAC => IsFramerateOverrideAC && IsCustomFrameLimit(FramerateSlotAC);
-
-        public double FramerateCustomValueDC
-        {
-            get => GetCustomFramerate(FramerateSlotDC);
-            set => SetCustomFramerate(FramerateSlotDC, value);
-        }
-
-        public double FramerateCustomValueAC
-        {
-            get => GetCustomFramerate(FramerateSlotAC);
-            set => SetCustomFramerate(FramerateSlotAC, value);
-        }
-
-        public string FramerateHintDC => GetFramerateHint(FramerateSlotDC);
-        public string FramerateHintAC => GetFramerateHint(FramerateSlotAC);
-
-        // an overridden framerate limit folds its value rows under the mode row: collapsed when the page opens,
-        // expanded when the mode is switched to Override; nothing to expand otherwise
-        private readonly bool[] _framerateExpanded = new bool[2];
-        private ICommand? _toggleFramerateExpandedDCCommand;
-        private ICommand? _toggleFramerateExpandedACCommand;
-
-        public ICommand ToggleFramerateExpandedDCCommand => _toggleFramerateExpandedDCCommand ??= new DelegateCommand(() => SetFramerateExpanded(FramerateSlotDC, !_framerateExpanded[FramerateSlotDC]));
-        public ICommand ToggleFramerateExpandedACCommand => _toggleFramerateExpandedACCommand ??= new DelegateCommand(() => SetFramerateExpanded(FramerateSlotAC, !_framerateExpanded[FramerateSlotAC]));
-
-        public bool ShowFramerateValueDC => IsFramerateOverrideDC && _framerateExpanded[FramerateSlotDC];
-        public bool ShowFramerateValueAC => IsFramerateOverrideAC && _framerateExpanded[FramerateSlotAC];
-        public bool ShowFramerateCustomDC => IsFramerateCustomDC && _framerateExpanded[FramerateSlotDC];
-        public bool ShowFramerateCustomAC => IsFramerateCustomAC && _framerateExpanded[FramerateSlotAC];
-
-        // chevron down when collapsed, up when expanded
-        public string FramerateChevronDC => GetChevronGlyph(_framerateExpanded[FramerateSlotDC]);
-        public string FramerateChevronAC => GetChevronGlyph(_framerateExpanded[FramerateSlotAC]);
-
-        private void SetFramerateExpanded(int slot, bool expanded)
-        {
-            if (_framerateExpanded[slot] == expanded)
-                return;
-
-            _framerateExpanded[slot] = expanded;
-            RefreshFramerateExpansion();
-        }
-
-        private void RefreshFramerateExpansion()
-        {
-            OnPropertyChanged(nameof(ShowFramerateValueDC));
-            OnPropertyChanged(nameof(ShowFramerateValueAC));
-            OnPropertyChanged(nameof(ShowFramerateCustomDC));
-            OnPropertyChanged(nameof(ShowFramerateCustomAC));
-            OnPropertyChanged(nameof(FramerateChevronDC));
-            OnPropertyChanged(nameof(FramerateChevronAC));
+            _framerateCustomSelected[slot] = true;
+            _framerateCustomValue[slot] = value;
+            _framerateCustomProfile = SelectedProfile?.Guid ?? Guid.Empty;
         }
 
         /// <summary>
-        /// Collapses the framerate limit, resolution, refresh rate and graphics rows of both power slots.
+        /// Profile reloads (our own save coming back through ProfileManager.Updated/Applied) must not drop Custom:
+        /// a custom value equal to a preset would otherwise snap to that preset and close the slider row.
+        /// Custom is only dropped on another profile, when the slot left Override, or when the value was changed elsewhere.
         /// </summary>
-        public void CollapseOverrideRows()
+        private void RevalidateFramerateCustom()
         {
-            _framerateExpanded[FramerateSlotDC] = false;
-            _framerateExpanded[FramerateSlotAC] = false;
-            RefreshFramerateExpansion();
-
-            foreach (Dictionary<Guid, DisplayOverrideRow> rows in _displayOverrideRows)
-                foreach (DisplayOverrideRow row in rows.Values)
-                    row.CollapseValueRows();
-
-            foreach (GraphicsOverrideRow row in AllGraphicsOverrideRows)
-                row.CollapseValueRows();
+            bool sameProfile = SelectedProfile is not null && SelectedProfile.Guid == _framerateCustomProfile;
+            for (int slot = 0; slot < _framerateCustomSelected.Length; slot++)
+            {
+                if (_framerateCustomSelected[slot] &&
+                    (!sameProfile || !IsFramerateOverride(slot) || GetFramerateValue(slot) != _framerateCustomValue[slot]))
+                    _framerateCustomSelected[slot] = false;
+            }
         }
+
+        // one framerate limit row per power slot
+        public FramerateOverrideRow? FramerateRowDC { get; private set; }
+        public FramerateOverrideRow? FramerateRowAC { get; private set; }
+
+        private IEnumerable<FramerateOverrideRow> AllFramerateOverrideRows => new[] { FramerateRowDC, FramerateRowAC }.OfType<FramerateOverrideRow>();
+
+        private void InitializeFramerateOverrideRows()
+        {
+            FramerateRowDC = new(this, FramerateSlotDC);
+            FramerateRowAC = new(this, FramerateSlotAC);
+        }
+
+        private static string FormatKey(int value) => value.ToString(CultureInfo.InvariantCulture);
 
         private PerformanceOverrides? GetPerformanceOverrides(int slot, bool create)
         {
@@ -1588,24 +1489,87 @@ namespace HandheldCompanion.ViewModels
             return ManagerFactory.powerProfileManager.GetProfile(guid);
         }
 
-        private void SetFramerateMode(int slot, FramerateLimitMode mode)
-        {
-            mode = mode.Normalize();
+        private bool IsFramerateOverride(int slot) => GetFramerateMode(slot) == FramerateLimitMode.Override;
 
-            PerformanceOverrides? overrides = GetPerformanceOverrides(slot, true);
-            if (overrides is null || overrides.FramerateMode == mode)
+        // what this layer gets without its own limit: the default profile, then the power profile;
+        // the default profile itself only has the power profile below it
+        private int GetInheritedFramerateLimit(int slot)
+        {
+            PowerProfile? powerProfile = GetSlotPowerProfile(slot);
+            if (SelectedProfile?.Default == true)
+                return PowerProfileManager.GetFramerateBaseline(powerProfile);
+
+            (_, int value, _) = ManagerFactory.powerProfileManager.ResolveFramerateLimit(null, slot, powerProfile);
+            return value;
+        }
+
+        private string GetFramerateInheritLabel(int slot)
+        {
+            string format = SelectedProfile?.Default == true ? Properties.Resources.OverrideMode_UsePowerProfile : Properties.Resources.OverrideMode_UseDefaultProfile;
+            return string.Format(format, GetFramerateValueLabel(GetInheritedFramerateLimit(slot)));
+        }
+
+        private static string GetFramerateValueLabel(int value)
+        {
+            return value > 0 ? $"{value} FPS" : Properties.Resources.ProfilesPage_FramerateNoLimit;
+        }
+
+        private IEnumerable<(string Key, string Label, bool IsEnabled)> GetFramerateValueChoices(int slot)
+        {
+            return _framerateLimits[slot].Select(vm => (vm.IsCustom ? FramerateCustomKey : FormatKey(vm.FrameLimit.limit), vm.ToString(), true));
+        }
+
+        private string GetFramerateChoiceKey(int slot)
+        {
+            if (!IsFramerateOverride(slot))
+                return OverrideChoice.InheritKey;
+
+            return IsCustomFrameLimit(slot) ? FramerateCustomKey : FormatKey(GetFramerateValue(slot));
+        }
+
+        private void SelectFramerateChoice(int slot, string? key)
+        {
+            // a list swap clears the selection on its way, that is not a pick
+            if (string.IsNullOrEmpty(key) || key == GetFramerateChoiceKey(slot))
                 return;
 
-            // a new override starts from the limit that applies right now (0 = no limit), so switching alone changes nothing
-            if (mode == FramerateLimitMode.Override)
-                (_, overrides.FramerateValue, _) = ManagerFactory.powerProfileManager.ResolveFramerateLimit(SelectedProfile, slot, GetSlotPowerProfile(slot));
+            PerformanceOverrides? overrides = GetPerformanceOverrides(slot, true);
+            if (overrides is null)
+                return;
 
-            _framerateCustomSelected[slot] = false;
-            overrides.FramerateMode = mode;
+            if (key == OverrideChoice.InheritKey)
+            {
+                overrides.FramerateMode = FramerateLimitMode.Inherit;
+                _framerateCustomSelected[slot] = false;
+            }
+            else
+            {
+                // a new override starts from the limit that applies right now (0 = no limit)
+                if (!IsFramerateOverride(slot))
+                {
+                    overrides.FramerateValue = GetInheritedFramerateLimit(slot);
+                    overrides.FramerateMode = FramerateLimitMode.Override;
+                }
 
-            // switched by the user: Override opens its value rows
-            if (!isLoadingProfile)
-                _framerateExpanded[slot] = mode == FramerateLimitMode.Override;
+                if (key == FramerateCustomKey)
+                {
+                    // Custom starts from the limit in effect (the resolved/inherited one, or the preset picked before).
+                    // A custom limit is never 0: coming from no limit it starts at the refresh rate, the top of the
+                    // slider and the closest cap to "no limit", so picking Custom alone doesn't throttle the game.
+                    if (overrides.FramerateValue <= 0)
+                    {
+                        int refreshRate = _framerateLimitsHz[slot] > 0 ? _framerateLimitsHz[slot] : GetFramerateCustomMaximum(slot);
+                        overrides.FramerateValue = Math.Min(refreshRate, GetFramerateCustomMaximum(slot));
+                    }
+
+                    MarkFramerateCustom(slot, overrides.FramerateValue);
+                }
+                else if (int.TryParse(key, NumberStyles.Integer, CultureInfo.InvariantCulture, out int limit))
+                {
+                    _framerateCustomSelected[slot] = false;
+                    overrides.FramerateValue = Math.Max(0, limit);
+                }
+            }
 
             RefreshFramerateOverrides();
 
@@ -1622,45 +1586,13 @@ namespace HandheldCompanion.ViewModels
             return !_framerateLimits[slot].Any(vm => !vm.IsCustom && vm.FrameLimit.limit == value);
         }
 
-        private ScreenFramelimitViewModel? GetSelectedFrameLimit(int slot)
-        {
-            if (IsCustomFrameLimit(slot))
-                return _framerateLimits[slot].FirstOrDefault(vm => vm.IsCustom);
-
-            int value = GetFramerateValue(slot);
-            return _framerateLimits[slot].FirstOrDefault(vm => !vm.IsCustom && vm.FrameLimit.limit == value);
-        }
-
-        private void SetSelectedFrameLimit(int slot, ScreenFramelimitViewModel? frameLimit)
-        {
-            if (frameLimit is null || SelectedProfile is null)
-                return;
-
-            if (frameLimit.IsCustom)
-            {
-                if (_framerateCustomSelected[slot])
-                    return;
-
-                _framerateCustomSelected[slot] = true;
-
-                // a custom limit is never 0, coming from Disabled it starts at the refresh rate
-                int value = GetFramerateValue(slot);
-                int refreshRate = _framerateLimitsHz[slot] > 0 ? _framerateLimitsHz[slot] : GetFramerateCustomMaximum(slot);
-                WriteFramerateValue(slot, value > 0 ? value : Math.Min(refreshRate, GetFramerateCustomMaximum(slot)));
-                return;
-            }
-
-            _framerateCustomSelected[slot] = false;
-            WriteFramerateValue(slot, frameLimit.FrameLimit.limit);
-        }
-
         private double GetCustomFramerate(int slot)
         {
             int value = GetFramerateValue(slot);
             if (value <= 0)
                 return GetFramerateCustomMaximum(slot);
 
-            return Math.Clamp(value, FramerateCustomMinimum, GetFramerateCustomMaximum(slot));
+            return Math.Clamp(value, ScreenFramelimitViewModel.CustomMinimum, GetFramerateCustomMaximum(slot));
         }
 
         private void SetCustomFramerate(int slot, double value)
@@ -1668,8 +1600,8 @@ namespace HandheldCompanion.ViewModels
             if (double.IsNaN(value) || !IsCustomFrameLimit(slot))
                 return;
 
-            int framerate = Math.Clamp((int)Math.Round(value), FramerateCustomMinimum, GetFramerateCustomMaximum(slot));
-            _framerateCustomSelected[slot] = true;
+            int framerate = Math.Clamp((int)Math.Round(value), ScreenFramelimitViewModel.CustomMinimum, GetFramerateCustomMaximum(slot));
+            MarkFramerateCustom(slot, framerate);
             WriteFramerateValue(slot, framerate);
         }
 
@@ -1807,10 +1739,6 @@ namespace HandheldCompanion.ViewModels
                 _framerateCustomMaximum[slot] = Math.Max(maximumRate > 0 ? maximumRate : 60, storedValue);
             }
 
-            OnPropertyChanged(nameof(FramerateLimitsDC));
-            OnPropertyChanged(nameof(FramerateLimitsAC));
-            OnPropertyChanged(nameof(FramerateCustomMaximumDC));
-            OnPropertyChanged(nameof(FramerateCustomMaximumAC));
             RefreshFramerateOverrides();
 
             // the presets source monitor drives the monitor badges
@@ -1840,61 +1768,78 @@ namespace HandheldCompanion.ViewModels
             UpdateDisplayMonitors();
         }
 
-        private string GetFramerateHint(int slot)
-        {
-            if (SelectedProfile is null)
-                return string.Empty;
-
-            PowerProfile? powerProfile = GetSlotPowerProfile(slot);
-            (_, int value, _) = ManagerFactory.powerProfileManager.ResolveFramerateLimit(SelectedProfile, slot, powerProfile);
-
-            return value > 0 ? $"{value} FPS" : Properties.Resources.ProfilesPage_FramerateNoLimit;
-        }
-
+        // the inherited limit comes from the default profile or the power profile, both may change while the page is open
         private void RefreshFramerateHints()
         {
-            OnPropertyChanged(nameof(FramerateHintDC));
-            OnPropertyChanged(nameof(FramerateHintAC));
+            UIHelper.TryBeginInvoke(RefreshFramerateOverrides);
         }
 
         private void RefreshFramerateOverrides()
         {
-            OnPropertyChanged(nameof(FramerateModeOptions));
-            OnPropertyChanged(nameof(FramerateModeDC));
-            OnPropertyChanged(nameof(FramerateModeAC));
-            OnPropertyChanged(nameof(IsFramerateOverrideDC));
-            OnPropertyChanged(nameof(IsFramerateOverrideAC));
-            OnPropertyChanged(nameof(SelectedFrameLimitDC));
-            OnPropertyChanged(nameof(SelectedFrameLimitAC));
-            OnPropertyChanged(nameof(SelectedFrameLimitKeyDC));
-            OnPropertyChanged(nameof(SelectedFrameLimitKeyAC));
-            OnPropertyChanged(nameof(IsFramerateCustomDC));
-            OnPropertyChanged(nameof(IsFramerateCustomAC));
-            OnPropertyChanged(nameof(FramerateCustomValueDC));
-            OnPropertyChanged(nameof(FramerateCustomValueAC));
-            OnPropertyChanged(nameof(FramerateHintDC));
-            OnPropertyChanged(nameof(FramerateHintAC));
-            RefreshFramerateExpansion();
+            foreach (FramerateOverrideRow row in AllFramerateOverrideRows)
+                row.Refresh();
+        }
+
+        /// <summary>
+        /// Framerate limit of one power slot: one choice list (Inherit, the presets, Custom) and a slider row for Custom.
+        /// </summary>
+        public sealed class FramerateOverrideRow : BaseViewModel
+        {
+            private readonly ProfilesPageViewModel _owner;
+            private readonly OverrideChoiceList _choices = new();
+
+            public FramerateOverrideRow(ProfilesPageViewModel owner, int slot)
+            {
+                _owner = owner;
+                Slot = slot;
+            }
+
+            public int Slot { get; }
+
+            public IReadOnlyList<OverrideChoice> Choices => _choices.Items;
+
+            // key of the selected entry, stable across lists: the preset entries are rebuilt when the refresh rate changes
+            public string SelectedKey
+            {
+                get => _owner.GetFramerateChoiceKey(Slot);
+                set => _owner.SelectFramerateChoice(Slot, value);
+            }
+
+            // bound through SelectedItem: a replaced list hands the combo a new entry, so it always selects again
+            public OverrideChoice? SelectedChoice
+            {
+                get => _choices.Find(SelectedKey);
+                set => SelectedKey = value?.Key ?? string.Empty;
+            }
+
+            public bool ShowCustom => _owner.IsFramerateOverride(Slot) && _owner.IsCustomFrameLimit(Slot);
+            public int CustomMinimum => ScreenFramelimitViewModel.CustomMinimum;
+            public int CustomMaximum => _owner.GetFramerateCustomMaximum(Slot);
+
+            public double CustomValue
+            {
+                get => _owner.GetCustomFramerate(Slot);
+                set => _owner.SetCustomFramerate(Slot, value);
+            }
+
+            internal void Refresh()
+            {
+                // option list before its selection
+                if (_choices.Update(_owner.GetFramerateInheritLabel(Slot), _owner.GetFramerateValueChoices(Slot),
+                    _owner.GetFramerateChoiceKey(Slot), () => GetFramerateValueLabel(_owner.GetFramerateValue(Slot))))
+                    _choices.Publish(OnPropertyChanged, nameof(Choices), nameof(SelectedChoice));
+                else
+                    OnPropertyChanged(nameof(SelectedChoice));
+                OnPropertyChanged(nameof(SelectedKey));
+                OnPropertyChanged(nameof(ShowCustom));
+                OnPropertyChanged(nameof(CustomMaximum));
+                OnPropertyChanged(nameof(CustomValue));
+            }
         }
         #endregion
 
         #region Display mode overrides
         // per monitor, per power slot; resolution and refresh rate are separate Inherit/Override fields
-        private static readonly IReadOnlyList<DisplayModeOption> GameDisplayModeOptions =
-        [
-            new(DisplayOverrideMode.Inherit, Properties.Resources.OverrideMode_UseDefaultProfile),
-            new(DisplayOverrideMode.Override, Properties.Resources.OverrideMode_Override),
-        ];
-
-        private static readonly IReadOnlyList<DisplayModeOption> DefaultDisplayModeOptions =
-        [
-            // the saved system display mode is restored
-            new(DisplayOverrideMode.Inherit, Properties.Resources.OverrideMode_UseSystemSettings),
-            new(DisplayOverrideMode.Override, Properties.Resources.OverrideMode_Override),
-        ];
-
-        public IReadOnlyList<DisplayModeOption> DisplayModeOptions =>
-            SelectedProfile?.Default == true ? DefaultDisplayModeOptions : GameDisplayModeOptions;
 
         // connected monitors with a known id, primary first
         private IReadOnlyList<DisplayMonitorOption> _displayMonitors = [];
@@ -1907,7 +1852,7 @@ namespace HandheldCompanion.ViewModels
         public ObservableCollection<DisplayOverrideRow> DisplayOverrideRowsDC { get; } = [];
         public ObservableCollection<DisplayOverrideRow> DisplayOverrideRowsAC { get; } = [];
 
-        // rows are reused per monitor so an expanded row stays expanded across refreshes
+        // rows are reused per monitor so an expanded monitor row stays expanded across refreshes
         private readonly Dictionary<Guid, DisplayOverrideRow>[] _displayOverrideRows = [new(), new()];
 
         private void UpdateDisplayOverrideRows(IReadOnlyList<DisplayMonitorItem> items)
@@ -1990,16 +1935,6 @@ namespace HandheldCompanion.ViewModels
             return monitor.IsPrimary && ResolveGraphics(slot).IntegerScaling.IsEnabled;
         }
 
-        private DisplayOverrideMode GetResolutionMode(int slot, DisplayMonitorOption monitor)
-        {
-            return GetDisplayModeOverride(slot, monitor, false)?.ResolutionMode ?? DisplayOverrideMode.Inherit;
-        }
-
-        private DisplayOverrideMode GetRefreshMode(int slot, DisplayMonitorOption monitor)
-        {
-            return GetDisplayModeOverride(slot, monitor, false)?.RefreshMode ?? DisplayOverrideMode.Inherit;
-        }
-
         // resolution the refresh rates are listed for: this layer, the inherited one, then the system display mode
         private (int Width, int Height) GetEffectiveResolution(int slot, DisplayMonitorOption monitor)
         {
@@ -2013,10 +1948,20 @@ namespace HandheldCompanion.ViewModels
             return GetInheritedResolution(slot, monitor);
         }
 
+        // what this layer gets without its own display mode: the default profile for a game profile,
+        // nothing for the default profile, which falls back to the system display mode
+        private ResolvedDisplayMode ResolveInheritedDisplayMode(int slot, DisplayMonitorOption monitor)
+        {
+            if (SelectedProfile is null || SelectedProfile.Default)
+                return default;
+
+            return ManagerFactory.powerProfileManager.ResolveDisplayMode(null, slot, monitor.Id);
+        }
+
         // what this layer gets without its own resolution: the inherited one, then the system display mode
         private (int Width, int Height) GetInheritedResolution(int slot, DisplayMonitorOption monitor)
         {
-            ResolvedDisplayMode resolved = ResolveDisplayMode(slot, monitor);
+            ResolvedDisplayMode resolved = ResolveInheritedDisplayMode(slot, monitor);
             if (resolved.HasResolution)
                 return (resolved.Width, resolved.Height);
 
@@ -2047,82 +1992,98 @@ namespace HandheldCompanion.ViewModels
             return expanded ? "\uE70E" : "\uE70D";
         }
 
-        private void SetResolutionMode(int slot, DisplayMonitorOption monitor, DisplayOverrideMode mode)
+        // what this layer gets without its own refresh rate, rounded like the apply path to a rate the effective resolution offers
+        private int GetInheritedRefreshRate(int slot, DisplayMonitorOption monitor)
         {
-            if (IsResolutionLocked(slot, monitor))
-                return;
-
-            DisplayModeOverride? displayMode = GetDisplayModeOverride(slot, monitor, true);
-            if (displayMode is null || displayMode.ResolutionMode == mode)
-                return;
-
-            // a new override starts from the resolution that applies right now, so switching alone changes nothing
-            if (mode == DisplayOverrideMode.Override)
-            {
-                (int width, int height) = GetInheritedResolution(slot, monitor);
-                DisplayResolutionOption? resolution = FindResolution(monitor, width, height) ?? monitor.Resolutions.FirstOrDefault();
-                displayMode.Width = resolution?.Width ?? width;
-                displayMode.Height = resolution?.Height ?? height;
-            }
-
-            displayMode.ResolutionMode = mode;
-            PruneDisplayModeOverride(slot, monitor);
-            RefreshDisplayModeOverrides();
-
-            if (!isLoadingProfile)
-                UpdateProfile();
+            ResolvedDisplayMode resolved = ResolveInheritedDisplayMode(slot, monitor);
+            int frequency = resolved.HasRefreshRate ? resolved.RefreshRate : GetSystemDisplayMode(monitor).Frequency;
+            return SnapRefreshRate(GetRefreshRates(slot, monitor), frequency);
         }
 
-        private string? GetSelectedResolution(int slot, DisplayMonitorOption monitor)
+        // the default profile inherits the system display mode
+        private string DisplayInheritFormat => SelectedProfile?.Default == true
+            ? Properties.Resources.OverrideMode_UseSystemSettings
+            : Properties.Resources.OverrideMode_UseDefaultProfile;
+
+        private string GetResolutionInheritLabel(int slot, DisplayMonitorOption monitor)
+        {
+            (int width, int height) = GetInheritedResolution(slot, monitor);
+            return string.Format(DisplayInheritFormat, $"{width} x {height}");
+        }
+
+        private string GetRefreshInheritLabel(int slot, DisplayMonitorOption monitor)
+        {
+            return string.Format(DisplayInheritFormat, $"{GetInheritedRefreshRate(slot, monitor)} Hz");
+        }
+
+        private string GetStoredResolutionLabel(int slot, DisplayMonitorOption monitor)
         {
             DisplayModeOverride? displayMode = GetDisplayModeOverride(slot, monitor, false);
+            return displayMode is null ? string.Empty : $"{displayMode.Width} x {displayMode.Height}";
+        }
+
+        private string GetStoredRefreshLabel(int slot, DisplayMonitorOption monitor)
+        {
+            DisplayModeOverride? displayMode = GetDisplayModeOverride(slot, monitor, false);
+            return displayMode is null ? string.Empty : $"{displayMode.RefreshRate} Hz";
+        }
+
+        private static IEnumerable<(string Key, string Label, bool IsEnabled)> GetResolutionValueChoices(DisplayMonitorOption monitor)
+        {
+            return monitor.Resolutions.Select(r => (r.Key, r.Label, true));
+        }
+
+        private IEnumerable<(string Key, string Label, bool IsEnabled)> GetRefreshValueChoices(int slot, DisplayMonitorOption monitor)
+        {
+            return GetRefreshRates(slot, monitor).Select(r => (FormatKey(r.Frequency), r.Label, true));
+        }
+
+        private string GetResolutionChoiceKey(int slot, DisplayMonitorOption monitor)
+        {
+            DisplayModeOverride? displayMode = GetDisplayModeOverride(slot, monitor, false);
+            if (displayMode is null || displayMode.ResolutionMode != DisplayOverrideMode.Override)
+                return OverrideChoice.InheritKey;
+
+            // a stored resolution the monitor doesn't list keeps its own key, the list shows it as not available
+            if (FindResolution(monitor, displayMode.Width, displayMode.Height) is DisplayResolutionOption resolution)
+                return resolution.Key;
+
+            return displayMode.Width > 0 && displayMode.Height > 0 ? $"{displayMode.Width}x{displayMode.Height}" : string.Empty;
+        }
+
+        private void SelectResolutionChoice(int slot, DisplayMonitorOption monitor, string? key)
+        {
+            // a list swap clears the selection on its way, that is not a pick
+            if (string.IsNullOrEmpty(key) || IsResolutionLocked(slot, monitor) || key == GetResolutionChoiceKey(slot, monitor))
+                return;
+
+            DisplayResolutionOption? resolution = null;
+            if (key != OverrideChoice.InheritKey)
+            {
+                resolution = monitor.Resolutions.FirstOrDefault(r => r.Key == key);
+                if (resolution is null)
+                    return;
+            }
+
+            DisplayModeOverride? displayMode = GetDisplayModeOverride(slot, monitor, true);
             if (displayMode is null)
-                return null;
-
-            return FindResolution(monitor, displayMode.Width, displayMode.Height)?.Key;
-        }
-
-        private void SetSelectedResolution(int slot, DisplayMonitorOption monitor, string? key)
-        {
-            if (string.IsNullOrEmpty(key) || IsResolutionLocked(slot, monitor))
                 return;
 
-            DisplayResolutionOption? resolution = monitor.Resolutions.FirstOrDefault(r => r.Key == key);
-            DisplayModeOverride? displayMode = GetDisplayModeOverride(slot, monitor, false);
-            if (resolution is null || displayMode is null || displayMode.ResolutionMode != DisplayOverrideMode.Override)
-                return;
-
-            if (displayMode.Width == resolution.Width && displayMode.Height == resolution.Height)
-                return;
-
-            displayMode.Width = resolution.Width;
-            displayMode.Height = resolution.Height;
-
-            // keep the stored refresh rate valid for the new resolution
-            if (displayMode.RefreshMode == DisplayOverrideMode.Override && displayMode.RefreshRate > 0)
-                displayMode.RefreshRate = SnapRefreshRate(resolution.RefreshRates, displayMode.RefreshRate);
-
-            RefreshDisplayModeOverrides();
-
-            if (!isLoadingProfile)
-                UpdateProfile();
-        }
-
-        private void SetRefreshMode(int slot, DisplayMonitorOption monitor, DisplayOverrideMode mode)
-        {
-            DisplayModeOverride? displayMode = GetDisplayModeOverride(slot, monitor, true);
-            if (displayMode is null || displayMode.RefreshMode == mode)
-                return;
-
-            // a new override starts from the refresh rate that applies right now, so switching alone changes nothing
-            if (mode == DisplayOverrideMode.Override)
+            if (resolution is null)
             {
-                ResolvedDisplayMode resolved = ResolveDisplayMode(slot, monitor);
-                int frequency = resolved.HasRefreshRate ? resolved.RefreshRate : GetSystemDisplayMode(monitor).Frequency;
-                displayMode.RefreshRate = SnapRefreshRate(GetRefreshRates(slot, monitor), frequency);
+                displayMode.ResolutionMode = DisplayOverrideMode.Inherit;
+            }
+            else
+            {
+                displayMode.ResolutionMode = DisplayOverrideMode.Override;
+                displayMode.Width = resolution.Width;
+                displayMode.Height = resolution.Height;
+
+                // keep the stored refresh rate valid for the new resolution
+                if (displayMode.RefreshMode == DisplayOverrideMode.Override && displayMode.RefreshRate > 0)
+                    displayMode.RefreshRate = SnapRefreshRate(resolution.RefreshRates, displayMode.RefreshRate);
             }
 
-            displayMode.RefreshMode = mode;
             PruneDisplayModeOverride(slot, monitor);
             RefreshDisplayModeOverrides();
 
@@ -2130,21 +2091,40 @@ namespace HandheldCompanion.ViewModels
                 UpdateProfile();
         }
 
-        private int GetSelectedRefreshRate(int slot, DisplayMonitorOption monitor)
+        private string GetRefreshChoiceKey(int slot, DisplayMonitorOption monitor)
         {
-            return GetDisplayModeOverride(slot, monitor, false)?.RefreshRate ?? 0;
+            DisplayModeOverride? displayMode = GetDisplayModeOverride(slot, monitor, false);
+            if (displayMode is null || displayMode.RefreshMode != DisplayOverrideMode.Override)
+                return OverrideChoice.InheritKey;
+
+            return displayMode.RefreshRate > 0 ? FormatKey(displayMode.RefreshRate) : string.Empty;
         }
 
-        private void SetSelectedRefreshRate(int slot, DisplayMonitorOption monitor, int frequency)
+        private void SelectRefreshChoice(int slot, DisplayMonitorOption monitor, string? key)
         {
-            if (frequency <= 0)
+            // a list swap clears the selection on its way, that is not a pick
+            if (string.IsNullOrEmpty(key) || key == GetRefreshChoiceKey(slot, monitor))
                 return;
 
-            DisplayModeOverride? displayMode = GetDisplayModeOverride(slot, monitor, false);
-            if (displayMode is null || displayMode.RefreshMode != DisplayOverrideMode.Override || displayMode.RefreshRate == frequency)
+            int frequency = 0;
+            if (key != OverrideChoice.InheritKey && (!int.TryParse(key, NumberStyles.Integer, CultureInfo.InvariantCulture, out frequency) || frequency <= 0))
                 return;
 
-            displayMode.RefreshRate = frequency;
+            DisplayModeOverride? displayMode = GetDisplayModeOverride(slot, monitor, true);
+            if (displayMode is null)
+                return;
+
+            if (frequency > 0)
+            {
+                displayMode.RefreshMode = DisplayOverrideMode.Override;
+                displayMode.RefreshRate = frequency;
+            }
+            else
+            {
+                displayMode.RefreshMode = DisplayOverrideMode.Inherit;
+            }
+
+            PruneDisplayModeOverride(slot, monitor);
             RefreshDisplayModeOverrides();
 
             if (!isLoadingProfile)
@@ -2156,34 +2136,9 @@ namespace HandheldCompanion.ViewModels
             return ManagerFactory.multimediaManager.GetSystemDisplayMode(monitor.Id, monitor.CurrentWidth, monitor.CurrentHeight, monitor.CurrentFrequency);
         }
 
-        private string GetResolutionHint(int slot, DisplayMonitorOption monitor)
+        private string? GetResolutionLockedHint(int slot, DisplayMonitorOption monitor)
         {
-            if (SelectedProfile is null)
-                return string.Empty;
-
-            if (IsResolutionLocked(slot, monitor))
-                return Properties.Resources.ProfilesPage_DisplayResolutionLocked;
-
-            // nothing inherited restores the system display mode
-            ResolvedDisplayMode resolved = ResolveDisplayMode(slot, monitor);
-            if (resolved.HasResolution)
-                return $"{resolved.Width} x {resolved.Height}";
-
-            (int width, int height, _) = GetSystemDisplayMode(monitor);
-            return $"{width} x {height}";
-        }
-
-        private string GetRefreshHint(int slot, DisplayMonitorOption monitor)
-        {
-            if (SelectedProfile is null)
-                return string.Empty;
-
-            ResolvedDisplayMode resolved = ResolveDisplayMode(slot, monitor);
-            if (resolved.HasRefreshRate)
-                return $"{resolved.RefreshRate} Hz";
-
-            (_, _, int frequency) = GetSystemDisplayMode(monitor);
-            return $"{frequency} Hz";
+            return IsResolutionLocked(slot, monitor) ? Properties.Resources.ProfilesPage_DisplayResolutionLocked : null;
         }
 
         /// <summary>
@@ -2274,8 +2229,6 @@ namespace HandheldCompanion.ViewModels
 
         private void RefreshDisplayModeOverrides()
         {
-            OnPropertyChanged(nameof(DisplayModeOptions));
-
             // the refresh rate override drives the framerate presets,
             // regenerating them ends with the monitor badges, which refresh the per monitor rows
             RegenerateFramerateLimits();
@@ -2287,9 +2240,9 @@ namespace HandheldCompanion.ViewModels
         public sealed class DisplayOverrideRow : BaseViewModel
         {
             private readonly ProfilesPageViewModel _owner;
+            private readonly OverrideChoiceList _resolutionChoices = new();
+            private readonly OverrideChoiceList _refreshChoices = new();
             private bool _isExpanded;
-            private bool _isResolutionExpanded;
-            private bool _isRefreshExpanded;
 
             public DisplayOverrideRow(ProfilesPageViewModel owner, int slot, DisplayMonitorOption monitor, DisplayMonitorItem item)
             {
@@ -2298,8 +2251,6 @@ namespace HandheldCompanion.ViewModels
                 Monitor = monitor;
                 Item = item;
                 ToggleExpandedCommand = new DelegateCommand(() => IsExpanded = !IsExpanded);
-                ToggleResolutionExpandedCommand = new DelegateCommand(() => IsResolutionExpanded = !IsResolutionExpanded);
-                ToggleRefreshExpandedCommand = new DelegateCommand(() => IsRefreshExpanded = !IsRefreshExpanded);
             }
 
             public int Slot { get; }
@@ -2335,102 +2286,38 @@ namespace HandheldCompanion.ViewModels
 
             // collapsed row summary: overridden parts emphasized, inherited parts in italic
             public DisplayModeSummary Summary => _owner.GetDisplayModeSummary(Slot, Monitor);
-            public IReadOnlyList<DisplayModeOption> DisplayModeOptions => _owner.DisplayModeOptions;
 
-            public DisplayOverrideMode ResolutionMode
+            // integer scaling owns the primary display resolution, the choice stays disabled meanwhile
+            public bool IsResolutionEnabled => !_owner.IsResolutionLocked(Slot, Monitor);
+            public string? ResolutionHint => _owner.GetResolutionLockedHint(Slot, Monitor);
+
+            public IReadOnlyList<OverrideChoice> ResolutionChoices => _resolutionChoices.Items;
+
+            public string SelectedResolutionKey
             {
-                get => _owner.GetResolutionMode(Slot, Monitor);
-                set
-                {
-                    bool wasOverride = IsResolutionOverride;
-                    _owner.SetResolutionMode(Slot, Monitor, value);
-
-                    // switched by the user: Override opens its value row
-                    if (IsResolutionOverride != wasOverride)
-                        IsResolutionExpanded = IsResolutionOverride;
-                }
+                get => _owner.GetResolutionChoiceKey(Slot, Monitor);
+                set => _owner.SelectResolutionChoice(Slot, Monitor, value);
             }
 
-            // an overridden resolution folds its value row under the mode row
-            public ICommand ToggleResolutionExpandedCommand { get; }
-
-            public bool IsResolutionExpanded
+            public OverrideChoice? SelectedResolutionChoice
             {
-                get => _isResolutionExpanded;
-                set
-                {
-                    if (SetProperty(ref _isResolutionExpanded, value))
-                    {
-                        OnPropertyChanged(nameof(ShowResolutionValue));
-                        OnPropertyChanged(nameof(ResolutionChevronGlyph));
-                    }
-                }
+                get => _resolutionChoices.Find(SelectedResolutionKey);
+                set => SelectedResolutionKey = value?.Key ?? string.Empty;
             }
 
-            public bool ShowResolutionValue => IsResolutionOverride && _isResolutionExpanded;
-            public string ResolutionChevronGlyph => GetChevronGlyph(_isResolutionExpanded);
+            public IReadOnlyList<OverrideChoice> RefreshChoices => _refreshChoices.Items;
 
-            public bool IsResolutionModeEnabled => !_owner.IsResolutionLocked(Slot, Monitor);
-            public bool IsResolutionOverride => !_owner.IsResolutionLocked(Slot, Monitor) && _owner.GetResolutionMode(Slot, Monitor) == DisplayOverrideMode.Override;
-            public IReadOnlyList<DisplayResolutionOption> Resolutions => Monitor.Resolutions;
-
-            public string? SelectedResolution
+            public string SelectedRefreshKey
             {
-                get => _owner.GetSelectedResolution(Slot, Monitor);
-                set => _owner.SetSelectedResolution(Slot, Monitor, value);
+                get => _owner.GetRefreshChoiceKey(Slot, Monitor);
+                set => _owner.SelectRefreshChoice(Slot, Monitor, value);
             }
 
-            public string ResolutionHint => _owner.GetResolutionHint(Slot, Monitor);
-
-            public DisplayOverrideMode RefreshMode
+            public OverrideChoice? SelectedRefreshChoice
             {
-                get => _owner.GetRefreshMode(Slot, Monitor);
-                set
-                {
-                    bool wasOverride = IsRefreshOverride;
-                    _owner.SetRefreshMode(Slot, Monitor, value);
-
-                    // switched by the user: Override opens its value row
-                    if (IsRefreshOverride != wasOverride)
-                        IsRefreshExpanded = IsRefreshOverride;
-                }
+                get => _refreshChoices.Find(SelectedRefreshKey);
+                set => SelectedRefreshKey = value?.Key ?? string.Empty;
             }
-
-            // an overridden refresh rate folds its value row under the mode row
-            public ICommand ToggleRefreshExpandedCommand { get; }
-
-            public bool IsRefreshExpanded
-            {
-                get => _isRefreshExpanded;
-                set
-                {
-                    if (SetProperty(ref _isRefreshExpanded, value))
-                    {
-                        OnPropertyChanged(nameof(ShowRefreshValue));
-                        OnPropertyChanged(nameof(RefreshChevronGlyph));
-                    }
-                }
-            }
-
-            public bool ShowRefreshValue => IsRefreshOverride && _isRefreshExpanded;
-            public string RefreshChevronGlyph => GetChevronGlyph(_isRefreshExpanded);
-
-            internal void CollapseValueRows()
-            {
-                IsResolutionExpanded = false;
-                IsRefreshExpanded = false;
-            }
-
-            public bool IsRefreshOverride => _owner.GetRefreshMode(Slot, Monitor) == DisplayOverrideMode.Override;
-            public IReadOnlyList<DisplayRefreshOption> RefreshRates => _owner.GetRefreshRates(Slot, Monitor);
-
-            public int SelectedRefreshRate
-            {
-                get => _owner.GetSelectedRefreshRate(Slot, Monitor);
-                set => _owner.SetSelectedRefreshRate(Slot, Monitor, value);
-            }
-
-            public string RefreshHint => _owner.GetRefreshHint(Slot, Monitor);
 
             internal void Update(DisplayMonitorOption monitor, DisplayMonitorItem item)
             {
@@ -2447,21 +2334,23 @@ namespace HandheldCompanion.ViewModels
                 OnPropertyChanged(nameof(IsSingleDisplay));
                 OnPropertyChanged(nameof(ShowSettings));
                 OnPropertyChanged(nameof(Summary));
-                OnPropertyChanged(nameof(DisplayModeOptions));
-                OnPropertyChanged(nameof(ResolutionMode));
-                OnPropertyChanged(nameof(IsResolutionModeEnabled));
-                OnPropertyChanged(nameof(IsResolutionOverride));
-                OnPropertyChanged(nameof(ShowResolutionValue));
-                // option lists before their selections
-                OnPropertyChanged(nameof(Resolutions));
-                OnPropertyChanged(nameof(SelectedResolution));
+                OnPropertyChanged(nameof(IsResolutionEnabled));
                 OnPropertyChanged(nameof(ResolutionHint));
-                OnPropertyChanged(nameof(RefreshMode));
-                OnPropertyChanged(nameof(IsRefreshOverride));
-                OnPropertyChanged(nameof(ShowRefreshValue));
-                OnPropertyChanged(nameof(RefreshRates));
-                OnPropertyChanged(nameof(SelectedRefreshRate));
-                OnPropertyChanged(nameof(RefreshHint));
+
+                // option lists before their selections
+                if (_resolutionChoices.Update(_owner.GetResolutionInheritLabel(Slot, Monitor), GetResolutionValueChoices(Monitor),
+                    _owner.GetResolutionChoiceKey(Slot, Monitor), () => _owner.GetStoredResolutionLabel(Slot, Monitor)))
+                    _resolutionChoices.Publish(OnPropertyChanged, nameof(ResolutionChoices), nameof(SelectedResolutionChoice));
+                else
+                    OnPropertyChanged(nameof(SelectedResolutionChoice));
+                OnPropertyChanged(nameof(SelectedResolutionKey));
+
+                if (_refreshChoices.Update(_owner.GetRefreshInheritLabel(Slot, Monitor), _owner.GetRefreshValueChoices(Slot, Monitor),
+                    _owner.GetRefreshChoiceKey(Slot, Monitor), () => _owner.GetStoredRefreshLabel(Slot, Monitor)))
+                    _refreshChoices.Publish(OnPropertyChanged, nameof(RefreshChoices), nameof(SelectedRefreshChoice));
+                else
+                    OnPropertyChanged(nameof(SelectedRefreshChoice));
+                OnPropertyChanged(nameof(SelectedRefreshKey));
             }
         }
         #endregion
@@ -2477,15 +2366,9 @@ namespace HandheldCompanion.ViewModels
             AFMF,
         }
 
-        public sealed record GraphicsModeOption(GraphicsOverrideMode Mode, string Label);
-
-        private static readonly IReadOnlyList<GraphicsModeOption> GameGraphicsModeOptions =
-        [
-            new(GraphicsOverrideMode.Inherit, Properties.Resources.OverrideMode_UseDefaultProfile),
-            new(GraphicsOverrideMode.Override, Properties.Resources.OverrideMode_Override),
-        ];
-
-        public IReadOnlyList<GraphicsModeOption> GraphicsModeOptions => GameGraphicsModeOptions;
+        // combo keys of the on and off entries, scaling modes and integer scaling dividers use their value
+        private const string GraphicsOnKey = "on";
+        private const string GraphicsOffKey = "off";
 
         // the default profile is the graphics baseline, its groups always apply and have no mode to pick
         private bool IsGraphicsBaseline => SelectedProfile?.Default == true;
@@ -2516,7 +2399,6 @@ namespace HandheldCompanion.ViewModels
 
         private void RefreshGraphicsOverrideRows()
         {
-            OnPropertyChanged(nameof(GraphicsModeOptions));
             foreach (GraphicsOverrideRow row in AllGraphicsOverrideRows)
                 row.Refresh();
         }
@@ -2543,19 +2425,154 @@ namespace HandheldCompanion.ViewModels
             return ManagerFactory.powerProfileManager.ResolveGraphics(SelectedProfile, slot);
         }
 
-        private void SetGraphicsMode(int slot, GraphicsGroup group, GraphicsOverrideMode mode)
+        // values the default profile gives a game profile; the default profile is the baseline and inherits nothing
+        private GraphicsGroupOverride? GetInheritedGraphicsValues(int slot, GraphicsGroup group)
         {
-            // the group still inherits here, so the resolved values are the inherited ones
-            GraphicsGroupOverride? inherited = GetResolvedGraphicsValues(ResolveGraphics(slot), group);
+            if (SelectedProfile is null || IsGraphicsBaseline)
+                return null;
+
+            return GetResolvedGraphicsValues(ManagerFactory.powerProfileManager.ResolveGraphics(null, slot), group);
+        }
+
+        private string GetGraphicsChoiceKey(int slot, GraphicsGroup group)
+        {
+            GraphicsGroupOverride? values = GetGraphicsGroup(slot, group, false);
+            if (!IsGraphicsBaseline && values?.IsOverride != true)
+                return OverrideChoice.InheritKey;
+
+            if (values is null)
+                return string.Empty;
+
+            if (!values.Enabled)
+                return GraphicsOffKey;
+
+            return values switch
+            {
+                ScalingOverride scaling => FormatKey(scaling.ScalingMode),
+                IntegerScalingOverride integerScaling => FormatKey(integerScaling.Divider),
+                _ => GraphicsOnKey,
+            };
+        }
+
+        private void SelectGraphicsChoice(int slot, GraphicsGroup group, string? key)
+        {
+            // a list swap clears the selection on its way, that is not a pick
+            if (string.IsNullOrEmpty(key) || key == GetGraphicsChoiceKey(slot, group))
+                return;
+
+            if (key == OverrideChoice.InheritKey)
+            {
+                if (!IsGraphicsBaseline)
+                    SetGraphicsValue<GraphicsGroupOverride>(slot, group, g => g.Mode = GraphicsOverrideMode.Inherit);
+                return;
+            }
+
+            GraphicsGroupOverride? inherited = GetInheritedGraphicsValues(slot, group);
 
             SetGraphicsValue<GraphicsGroupOverride>(slot, group, g =>
             {
-                // a new override starts from what the slot inherits, nothing inherited keeps the stored values
-                if (!g.IsOverride && mode == GraphicsOverrideMode.Override && inherited is not null)
+                // a new override starts from what the slot inherits, so the values the combo doesn't pick carry over
+                if (!g.IsOverride && inherited is not null)
                     g.CopyValuesFrom(inherited);
 
-                g.Mode = mode;
+                g.Mode = GraphicsOverrideMode.Override;
+                g.Enabled = key != GraphicsOffKey;
+
+                if (g.Enabled && int.TryParse(key, NumberStyles.Integer, CultureInfo.InvariantCulture, out int value))
+                {
+                    switch (g)
+                    {
+                        case ScalingOverride scaling:
+                            scaling.ScalingMode = value;
+                            break;
+                        case IntegerScalingOverride integerScaling:
+                            integerScaling.Divider = value;
+                            break;
+                    }
+                }
             });
+        }
+
+        private static string GetScalingModeLabel(int scalingMode)
+        {
+            return scalingMode switch
+            {
+                0 => Properties.Resources.ProfilesPage_ScalingMode_PreserveAspectRatio,
+                1 => Properties.Resources.ProfilesPage_ScalingMode_FullPanel,
+                2 => Properties.Resources.ProfilesPage_ScalingMode_Center,
+                _ => FormatKey(scalingMode),
+            };
+        }
+
+        // short divider form for the Inherit and not available entries, the list entries keep the resulting resolution
+        private static string GetDividerLabel(int divider) => $"1/{divider}";
+
+        // dividers of the primary display, integer scaling only drives that one
+        private List<ScreenDividerViewModel> GetIntegerScalingDividers()
+        {
+            lock (_collectionLock6)
+                return IntegerScalingDividers.ToList();
+        }
+
+        private string GetGraphicsValueLabel(GraphicsGroupOverride values)
+        {
+            if (!values.Enabled)
+                return Properties.Resources.ProfilesPage_GraphicsOff;
+
+            return values switch
+            {
+                ScalingOverride scaling => GetScalingModeLabel(scaling.ScalingMode),
+                IntegerScalingOverride integerScaling => GetDividerLabel(integerScaling.Divider),
+                RSROverride rsr => string.Format(Properties.Resources.ProfilesPage_GraphicsOnPercent, rsr.Sharpness),
+                RISOverride ris => string.Format(Properties.Resources.ProfilesPage_GraphicsOnPercent, ris.Sharpness),
+                _ => Properties.Resources.ProfilesPage_GraphicsOn,
+            };
+        }
+
+        private string GetStoredGraphicsLabel(int slot, GraphicsGroup group)
+        {
+            GraphicsGroupOverride? values = GetGraphicsGroup(slot, group, false);
+            return values is null ? string.Empty : GetGraphicsValueLabel(values);
+        }
+
+        // no Inherit entry on the default profile, the graphics baseline
+        private string? GetGraphicsInheritLabel(int slot, GraphicsGroup group)
+        {
+            if (IsGraphicsBaseline)
+                return null;
+
+            GraphicsGroupOverride? inherited = GetInheritedGraphicsValues(slot, group);
+            return string.Format(Properties.Resources.OverrideMode_UseDefaultProfile,
+                inherited is null ? Properties.Resources.ProfilesPage_GraphicsOff : GetGraphicsValueLabel(inherited));
+        }
+
+        private IEnumerable<(string Key, string Label, bool IsEnabled)> GetGraphicsValueChoices(int slot, GraphicsGroup group)
+        {
+            (string, string, bool) off = (GraphicsOffKey, Properties.Resources.ProfilesPage_GraphicsOff, true);
+
+            switch (group)
+            {
+                case GraphicsGroup.Scaling:
+                    // center scaling doesn't work with RSR
+                    bool centerEnabled = !ResolveGraphics(slot).RSR.IsEnabled;
+                    return
+                    [
+                        off,
+                        (FormatKey(0), GetScalingModeLabel(0), true),
+                        (FormatKey(1), GetScalingModeLabel(1), true),
+                        (FormatKey(2), GetScalingModeLabel(2), centerEnabled),
+                    ];
+
+                case GraphicsGroup.IntegerScaling:
+                    return new[] { off }.Concat(GetIntegerScalingDividers().Select(d => (FormatKey(d.Divider), d.ToString(), true)));
+
+                default:
+                    return
+                    [
+                        (GraphicsOnKey, Properties.Resources.ProfilesPage_GraphicsOn, true),
+                        off,
+                    ];
+            }
         }
 
         // effective values of one group, null when no layer sets it
@@ -2621,29 +2638,25 @@ namespace HandheldCompanion.ViewModels
             return ResolveGraphics(slot).Scaling.IsEnabled;
         }
 
-        private string GetGraphicsHint(int slot, GraphicsGroup group)
+        // the value sits in the combo, the hint only explains why a group can't apply
+        private string? GetGraphicsHint(int slot, GraphicsGroup group)
         {
             if (SelectedProfile is null)
-                return string.Empty;
+                return null;
 
             if ((group is GraphicsGroup.RSR or GraphicsGroup.IntegerScaling) && !NeedsGPUScalingMet(slot))
                 return Properties.Resources.ProfilesPage_GraphicsNeedsGPUScaling;
 
-            // effective state on this slot, only unset while the default profile isn't loaded
-            GraphicsGroupOverride? values = GetResolvedGraphicsValues(ResolveGraphics(slot), group);
-            if (values is null)
-                return string.Empty;
-
-            return values.Enabled ? Properties.Resources.ProfilesPage_GraphicsOn : Properties.Resources.ProfilesPage_GraphicsOff;
+            return null;
         }
 
         /// <summary>
-        /// One graphics group on one power slot: a mode row, and its value rows when overridden.
+        /// One graphics group on one power slot: one choice list (Inherit, Off, On or the group's values), and its value rows while overridden and on.
         /// </summary>
         public sealed class GraphicsOverrideRow : BaseViewModel
         {
             private readonly ProfilesPageViewModel _owner;
-            private bool _isExpanded;
+            private readonly OverrideChoiceList _choices = new();
 
             public GraphicsOverrideRow(ProfilesPageViewModel owner, int slot, GraphicsGroup group, string header)
             {
@@ -2651,7 +2664,6 @@ namespace HandheldCompanion.ViewModels
                 Slot = slot;
                 Group = group;
                 Header = header;
-                ToggleExpandedCommand = new DelegateCommand(() => IsExpanded = !IsExpanded);
             }
 
             public int Slot { get; }
@@ -2660,66 +2672,34 @@ namespace HandheldCompanion.ViewModels
 
             public bool IsVisible => _owner.IsGraphicsGroupVisible(Group);
             public bool IsSupported => _owner.IsGraphicsGroupSupported(Slot, Group);
-            public string Hint => _owner.GetGraphicsHint(Slot, Group);
-            public IReadOnlyList<GraphicsModeOption> ModeOptions => _owner.GraphicsModeOptions;
-            public bool ShowModeSelector => !_owner.IsGraphicsBaseline;
+            public string? Hint => _owner.GetGraphicsHint(Slot, Group);
+
+            public IReadOnlyList<OverrideChoice> Choices => _choices.Items;
+
+            public string SelectedKey
+            {
+                get => _owner.GetGraphicsChoiceKey(Slot, Group);
+                set => _owner.SelectGraphicsChoice(Slot, Group, value);
+            }
+
+            // bound through SelectedItem: a replaced list hands the combo a new entry, so it always selects again
+            public OverrideChoice? SelectedChoice
+            {
+                get => _choices.Find(SelectedKey);
+                set => SelectedKey = value?.Key ?? string.Empty;
+            }
 
             private GraphicsGroupOverride? Values => _owner.GetGraphicsGroup(Slot, Group, false);
 
-            public GraphicsOverrideMode Mode
-            {
-                get => _owner.IsGraphicsBaseline ? GraphicsOverrideMode.Override : Values?.Mode ?? GraphicsOverrideMode.Inherit;
-                set
-                {
-                    bool wasOverride = IsOverride;
-                    _owner.SetGraphicsMode(Slot, Group, value);
-
-                    // switched by the user: Override opens its value rows
-                    if (IsOverride != wasOverride)
-                        IsExpanded = IsOverride;
-                }
-            }
-
-            public bool IsOverride => Mode == GraphicsOverrideMode.Override;
-
-            // an overridden group folds its value rows under the mode row
-            public ICommand ToggleExpandedCommand { get; }
-
-            public bool IsExpanded
-            {
-                get => _isExpanded;
-                set
-                {
-                    if (SetProperty(ref _isExpanded, value))
-                        RefreshValueRows();
-                }
-            }
-
-            public string ChevronGlyph => GetChevronGlyph(_isExpanded);
-            public bool ShowValues => IsOverride && _isExpanded;
-            public bool ShowScalingMode => ShowValues && Group == GraphicsGroup.Scaling;
+            // value rows edit this layer's values: shown while it overrides the group and turns it on
+            public bool ShowValues => Values is { Enabled: true } values && (_owner.IsGraphicsBaseline || values.IsOverride);
             public bool ShowSharpness => ShowValues && (Group is GraphicsGroup.RSR or GraphicsGroup.RIS);
-            public bool ShowIntegerScaling => ShowValues && Group == GraphicsGroup.IntegerScaling;
+            public bool ShowIntegerScalingType => ShowValues && Group == GraphicsGroup.IntegerScaling;
             public bool ShowAFMF21 => ShowValues && Group == GraphicsGroup.AFMF && _owner.HasAFMF21Support;
 
             public string SharpnessHeader => Group == GraphicsGroup.RSR
                 ? Properties.Resources.ProfilesPage_ResolutionScale
                 : Properties.Resources.ProfilesPage_SharpeningScale;
-
-            public bool IsEnabled
-            {
-                get => Values?.Enabled ?? false;
-                set => _owner.SetGraphicsValue<GraphicsGroupOverride>(Slot, Group, g => g.Enabled = value);
-            }
-
-            public int ScalingMode
-            {
-                get => (Values as ScalingOverride)?.ScalingMode ?? 0;
-                set => _owner.SetGraphicsValue<ScalingOverride>(Slot, Group, g => g.ScalingMode = value);
-            }
-
-            // center scaling doesn't work with RSR
-            public bool IsCenterScalingEnabled => !_owner.ResolveGraphics(Slot).RSR.IsEnabled;
 
             public double Sharpness
             {
@@ -2735,27 +2715,6 @@ namespace HandheldCompanion.ViewModels
                         _owner.SetGraphicsValue<RSROverride>(Slot, Group, g => g.Sharpness = (int)value);
                     else
                         _owner.SetGraphicsValue<RISOverride>(Slot, Group, g => g.Sharpness = (int)value);
-                }
-            }
-
-            // dividers of the primary display, integer scaling only drives that one
-            public ObservableCollection<ScreenDividerViewModel> Dividers => _owner.IntegerScalingDividers;
-
-            public int DividerIndex
-            {
-                get
-                {
-                    int divider = (Values as IntegerScalingOverride)?.Divider ?? 1;
-                    ScreenDividerViewModel? match = Dividers.FirstOrDefault(d => d.Divider == divider);
-                    return match is not null ? Dividers.IndexOf(match) : 0;
-                }
-                set
-                {
-                    if (value < 0 || value >= Dividers.Count)
-                        return;
-
-                    int divider = Dividers[value].Divider;
-                    _owner.SetGraphicsValue<IntegerScalingOverride>(Slot, Group, g => g.Divider = divider);
                 }
             }
 
@@ -2789,38 +2748,25 @@ namespace HandheldCompanion.ViewModels
                 set => _owner.SetGraphicsValue<AFMFOverride>(Slot, Group, g => g.FastMotionResponse = value);
             }
 
-            internal void CollapseValueRows()
-            {
-                IsExpanded = false;
-            }
-
-            private void RefreshValueRows()
-            {
-                OnPropertyChanged(nameof(ChevronGlyph));
-                OnPropertyChanged(nameof(ShowValues));
-                OnPropertyChanged(nameof(ShowScalingMode));
-                OnPropertyChanged(nameof(ShowSharpness));
-                OnPropertyChanged(nameof(ShowIntegerScaling));
-                OnPropertyChanged(nameof(ShowAFMF21));
-            }
-
             internal void Refresh()
             {
                 OnPropertyChanged(nameof(IsVisible));
                 OnPropertyChanged(nameof(IsSupported));
                 OnPropertyChanged(nameof(Hint));
-                OnPropertyChanged(nameof(ModeOptions));
-                OnPropertyChanged(nameof(ShowModeSelector));
-                OnPropertyChanged(nameof(Mode));
-                OnPropertyChanged(nameof(IsOverride));
-                RefreshValueRows();
-                OnPropertyChanged(nameof(IsEnabled));
-                OnPropertyChanged(nameof(ScalingMode));
-                OnPropertyChanged(nameof(IsCenterScalingEnabled));
+
+                // option list before its selection
+                if (_choices.Update(_owner.GetGraphicsInheritLabel(Slot, Group), _owner.GetGraphicsValueChoices(Slot, Group),
+                    _owner.GetGraphicsChoiceKey(Slot, Group), () => _owner.GetStoredGraphicsLabel(Slot, Group)))
+                    _choices.Publish(OnPropertyChanged, nameof(Choices), nameof(SelectedChoice));
+                else
+                    OnPropertyChanged(nameof(SelectedChoice));
+                OnPropertyChanged(nameof(SelectedKey));
+
+                OnPropertyChanged(nameof(ShowValues));
+                OnPropertyChanged(nameof(ShowSharpness));
+                OnPropertyChanged(nameof(ShowIntegerScalingType));
+                OnPropertyChanged(nameof(ShowAFMF21));
                 OnPropertyChanged(nameof(Sharpness));
-                // option lists before their selections
-                OnPropertyChanged(nameof(Dividers));
-                OnPropertyChanged(nameof(DividerIndex));
                 OnPropertyChanged(nameof(IntegerScalingType));
                 OnPropertyChanged(nameof(AFMFAlgorithm));
                 OnPropertyChanged(nameof(AFMFSearchMode));
@@ -3012,12 +2958,8 @@ namespace HandheldCompanion.ViewModels
             if (_selectedProfile == value && !forceNotification)
                 return false;
 
-            bool profileChanged = _selectedProfile?.Guid != value?.Guid;
             _selectedProfile = value;
 
-            // another profile opens with its override rows collapsed
-            if (profileChanged)
-                CollapseOverrideRows();
             OnPropertyChanged(nameof(SelectedProfile));
             OnPropertyChanged(nameof(HasSelectedProfile));
             OnPropertyChanged(nameof(CanLaunchProcess));
@@ -3095,6 +3037,7 @@ namespace HandheldCompanion.ViewModels
 
         private void InitializeCommon()
         {
+            InitializeFramerateOverrideRows();
             InitializeGraphicsOverrideRows();
 
             GyroHotkey = new(gyroButtonFlags) { IsInternal = true, Name = "HOTKEY_GYRO_ACTIVATION_QP" };
@@ -4457,7 +4400,7 @@ namespace HandheldCompanion.ViewModels
                 UpdateSelectedPowerProfileName();
                 GetPerformanceOverrides(FramerateSlotDC, true);
                 GetPerformanceOverrides(FramerateSlotAC, true);
-                Array.Clear(_framerateCustomSelected);
+                RevalidateFramerateCustom();
                 RefreshFramerateOverrides();
                 RefreshDisplayModeOverrides();
                 RefreshGraphicsOverrideRows();
