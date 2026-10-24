@@ -49,8 +49,8 @@
                             <Setter Property="TextElement.Foreground" Value="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
                             <Style.Triggers>
                                 <DataTrigger Binding="{Binding IsRunningHere}" Value="True">
-                                    <Setter Property="Background" Value="{DynamicResource SystemControlForegroundAccentBrush}" />
-                                    <Setter Property="TextElement.Foreground" Value="{DynamicResource SystemControlPageBackgroundAltHighBrush}" />
+                                    <Setter Property="Background" Value="{DynamicResource AccentFillColorDefaultBrush}" />
+                                    <Setter Property="TextElement.Foreground" Value="{DynamicResource TextOnAccentFillColorPrimaryBrush}" />
                                 </DataTrigger>
                             </Style.Triggers>
                         </Style>
