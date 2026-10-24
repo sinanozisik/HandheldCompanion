@@ -1451,6 +1451,30 @@ namespace HandheldCompanion.ViewModels
         // Custom was picked for a slot, its value may still match a preset
         private readonly bool[] _framerateCustomSelected = new bool[2];
 
+        // custom isn't stored in the profile, so remember which profile and value it was picked with:
+        // our own save reloads the profile and must not snap a preset-equal custom value back to that preset
+        private readonly int[] _framerateCustomValue = new int[2];
+        private Guid _framerateCustomProfile = Guid.Empty;
+
+        private void MarkFramerateCustom(int slot, int value)
+        {
+            _framerateCustomSelected[slot] = true;
+            _framerateCustomValue[slot] = value;
+            _framerateCustomProfile = SelectedProfile?.Guid ?? Guid.Empty;
+        }
+
+        // keep custom across reloads of the same profile, drop it once the profile, mode or value changed elsewhere
+        private void RevalidateFramerateCustom()
+        {
+            bool sameProfile = SelectedProfile is not null && SelectedProfile.Guid == _framerateCustomProfile;
+            for (int slot = 0; slot < _framerateCustomSelected.Length; slot++)
+            {
+                if (_framerateCustomSelected[slot] &&
+                    (!sameProfile || GetFramerateMode(slot) != FramerateLimitMode.Override || GetFramerateValue(slot) != _framerateCustomValue[slot]))
+                    _framerateCustomSelected[slot] = false;
+            }
+        }
+
         // bound through SelectedValue so the selection survives the options list being swapped
         // (game profile vs default profile labels); a missing entry reads as Inherit
         public FramerateLimitMode FramerateModeDC
@@ -1641,12 +1665,12 @@ namespace HandheldCompanion.ViewModels
                 if (_framerateCustomSelected[slot])
                     return;
 
-                _framerateCustomSelected[slot] = true;
-
                 // a custom limit is never 0, coming from Disabled it starts at the refresh rate
                 int value = GetFramerateValue(slot);
                 int refreshRate = _framerateLimitsHz[slot] > 0 ? _framerateLimitsHz[slot] : GetFramerateCustomMaximum(slot);
-                WriteFramerateValue(slot, value > 0 ? value : Math.Min(refreshRate, GetFramerateCustomMaximum(slot)));
+                value = value > 0 ? value : Math.Min(refreshRate, GetFramerateCustomMaximum(slot));
+                MarkFramerateCustom(slot, value);
+                WriteFramerateValue(slot, value);
                 return;
             }
 
@@ -1669,7 +1693,7 @@ namespace HandheldCompanion.ViewModels
                 return;
 
             int framerate = Math.Clamp((int)Math.Round(value), FramerateCustomMinimum, GetFramerateCustomMaximum(slot));
-            _framerateCustomSelected[slot] = true;
+            MarkFramerateCustom(slot, framerate);
             WriteFramerateValue(slot, framerate);
         }
 
@@ -4457,7 +4481,7 @@ namespace HandheldCompanion.ViewModels
                 UpdateSelectedPowerProfileName();
                 GetPerformanceOverrides(FramerateSlotDC, true);
                 GetPerformanceOverrides(FramerateSlotAC, true);
-                Array.Clear(_framerateCustomSelected);
+                RevalidateFramerateCustom();
                 RefreshFramerateOverrides();
                 RefreshDisplayModeOverrides();
                 RefreshGraphicsOverrideRows();
