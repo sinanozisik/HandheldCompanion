@@ -1846,13 +1846,9 @@ namespace HandheldCompanion.ViewModels
                 return string.Empty;
 
             PowerProfile? powerProfile = GetSlotPowerProfile(slot);
-            (FramerateLimitMode mode, int value, _) = ManagerFactory.powerProfileManager.ResolveFramerateLimit(SelectedProfile, slot, powerProfile);
+            (_, int value, _) = ManagerFactory.powerProfileManager.ResolveFramerateLimit(SelectedProfile, slot, powerProfile);
 
-            string effective = mode != FramerateLimitMode.Override
-                ? Properties.Resources.ProfilesPage_FramerateRTSSLimit
-                : value > 0 ? $"{value} FPS" : Properties.Resources.ProfilesPage_FramerateNoLimit;
-
-            return effective;
+            return value > 0 ? $"{value} FPS" : Properties.Resources.ProfilesPage_FramerateNoLimit;
         }
 
         private void RefreshFramerateHints()

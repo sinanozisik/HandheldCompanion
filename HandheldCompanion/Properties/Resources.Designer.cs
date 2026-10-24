@@ -10632,15 +10632,6 @@ namespace HandheldCompanion.Properties {
         }
         
         /// <summary>
-        ///   Looks up a localized string similar to RTSS settings.
-        /// </summary>
-        public static string ProfilesPage_FramerateRTSSLimit {
-            get {
-                return ResourceManager.GetString("ProfilesPage_FramerateRTSSLimit", resourceCulture);
-            }
-        }
-        
-        /// <summary>
         ///   Looks up a localized string similar to Global settings.
         /// </summary>
         public static string ProfilesPage_GlobalSettings {

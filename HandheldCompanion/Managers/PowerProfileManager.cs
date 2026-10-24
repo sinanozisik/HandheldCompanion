@@ -481,7 +481,7 @@ namespace HandheldCompanion.Managers
         /// <summary>
         /// Resolves the framerate limit for a game profile and power state.
         /// The first layer set to Override wins: game profile, default game profile, power profile.
-        /// An Override value of 0 removes the limit. Inherit on every layer means RTSS keeps its own limit.
+        /// An Override value of 0 removes the limit. The power profile always decides, a disabled limiter means no limit.
         /// </summary>
         public (FramerateLimitMode Mode, int Value, FramerateLimitSource Source) ResolveFramerateLimit(Profile? gameProfile, int powerLineStatus, PowerProfile? powerProfile)
         {
@@ -505,19 +505,17 @@ namespace HandheldCompanion.Managers
                 }
             }
 
-            if (powerProfile is null)
-                return (FramerateLimitMode.Inherit, 0, FramerateLimitSource.PowerProfile);
+            // the power profile is the baseline: an enabled limiter writes its value, a disabled one removes the limit,
+            // so a limit set by a previous profile never stays in RTSS
+            int baseline = powerProfile is not null && (powerProfile.FramerateLimitEnabled ?? powerProfile.FramerateValue != 0)
+                ? Math.Max(0, powerProfile.FramerateValue)
+                : 0;
 
-            // same rule as upstream: an enabled limiter writes its value, 0 removes the limit
-            if (powerProfile.FramerateLimitEnabled ?? powerProfile.FramerateValue != 0)
-                return (FramerateLimitMode.Override, Math.Max(0, powerProfile.FramerateValue), FramerateLimitSource.PowerProfile);
-
-            return (FramerateLimitMode.Inherit, 0, FramerateLimitSource.PowerProfile);
+            return (FramerateLimitMode.Override, baseline, FramerateLimitSource.PowerProfile);
         }
 
         /// <summary>
-        /// Resolves the framerate limit for the current game profile and power state.
-        /// Returns false when RTSS should keep its own limit.
+        /// Resolves the framerate limit for the current game profile and power state, 0 means no limit.
         /// </summary>
         public bool GetFramerateLimit(out int framerate)
         {
