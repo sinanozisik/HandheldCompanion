@@ -651,37 +651,17 @@ namespace HandheldCompanion.Managers
         }
 
         /// <summary>
-        /// Compares gyro states with loose thresholds to ignore sensor noise.
-        /// While motion is in use there is no threshold: Steam and games integrate gyro and
-        /// apply their own deadzone, so dropping small samples shows up as a hard deadzone
-        /// and slow pans stair-step. Real controllers send every sample.
-        /// ponytail: Ceiling—this compares all sensor states which is O(n). For strict dedup, 
-        /// compare only the "active" sensor. Upgrade path: accept SensorState hint or cache last active.
+        /// Returns true when motion alone justifies a report: the target carries motion and a motion
+        /// source is active. A value threshold here acts as a deadzone and makes slow pans stair-step,
+        /// so motion targets get every tick while targets without motion ignore gyro entirely.
         /// </summary>
-        private static bool GyroStateHasSignificantChange(GyroState? previous, GyroState current)
+        private static bool MotionNeedsReport()
         {
-            if (previous is null)
-                return true; // First update, always send
+            // no gyro/accel fields in the report (xbox 360), motion alone changes nothing
+            if (vTarget is null || !vTarget.HasMotion)
+                return false;
 
-            if (SensorsManager.ActiveSensorFamily != DeviceUtils.SensorFamily.None)
-                return true; // Motion in use, send every sample
-
-            // Loose thresholds: 1.0 deg/s for gyro, 0.2g for accel (human-perceptible movements)
-            const float gyroThreshold = 1.0f;
-            const float accelThreshold = 0.2f;
-
-            // Check the default sensor state (most common case)
-            var prevGyro = previous.GetGyroscope(GyroState.SensorState.Default);
-            var currGyro = current.GetGyroscope(GyroState.SensorState.Default);
-            var prevAccel = previous.GetAccelerometer(GyroState.SensorState.Default);
-            var currAccel = current.GetAccelerometer(GyroState.SensorState.Default);
-
-            // Simple distance check: if either gyro or accel vector moved significantly, report change
-            var gyroDelta = currGyro - prevGyro;
-            var accelDelta = currAccel - prevAccel;
-
-            return gyroDelta.LengthSquared() > (gyroThreshold * gyroThreshold) ||
-                   accelDelta.LengthSquared() > (accelThreshold * accelThreshold);
+            return SensorsManager.ActiveSensorFamily != DeviceUtils.SensorFamily.None;
         }
 
         public static void UpdateInputs(ControllerState controllerState, GamepadMotion gamepadMotion)
@@ -698,9 +678,9 @@ namespace HandheldCompanion.Managers
             {
                 bool buttonChanged = ButtonStateHasChanged(prevControllerState.ButtonState, controllerState.ButtonState);
                 bool axisChanged = AxisStateHasSignificantChange(prevControllerState.AxisState, controllerState.AxisState);
-                bool gyroChanged = GyroStateHasSignificantChange(prevControllerState.GyroState, controllerState.GyroState);
+                bool motionChanged = MotionNeedsReport();
 
-                if (!buttonChanged && !axisChanged && !gyroChanged)
+                if (!buttonChanged && !axisChanged && !motionChanged)
                     return; // No significant change, skip update
             }
 
