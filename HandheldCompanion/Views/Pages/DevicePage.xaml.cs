@@ -477,7 +477,7 @@ namespace HandheldCompanion.Views.Pages
         {
             // workaround: NotifyableColor is raising ColorChanged event infinitely
             ColorRoutedEventArgs colorArgs = (ColorRoutedEventArgs)e;
-            // Ignore a repeated selection of the same color; resetting Color here used to turn the preview black.
+            // same color again; resetting here turned the preview black
             if (prevMainColor == colorArgs.Color)
                 return;
             prevMainColor = colorArgs.Color;
@@ -492,7 +492,7 @@ namespace HandheldCompanion.Views.Pages
         {
             // workaround: NotifyableColor is raising ColorChanged event infinitely
             ColorRoutedEventArgs colorArgs = (ColorRoutedEventArgs)e;
-            // Ignore a repeated selection of the same color; resetting Color here used to turn the preview black.
+            // same color again; resetting here turned the preview black
             if (prevSecondColor == colorArgs.Color)
                 return;
             prevSecondColor = colorArgs.Color;
