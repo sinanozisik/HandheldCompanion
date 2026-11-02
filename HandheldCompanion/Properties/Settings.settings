@@ -419,6 +419,9 @@
     <Setting Name="EnhancedSleep" Type="System.Boolean" Scope="User">
       <Value Profile="(Default)">False</Value>
     </Setting>
+    <Setting Name="QuickSleep" Type="System.Boolean" Scope="User">
+      <Value Profile="(Default)">False</Value>
+    </Setting>
     <Setting Name="MasterInterval" Type="System.Int32" Scope="User">
       <Value Profile="(Default)">0</Value>
     </Setting>

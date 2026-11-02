@@ -96,6 +96,7 @@ namespace HandheldCompanion.Views.Pages
             SettingsManager_SettingValueChanged("MsrUndervoltGpu", ManagerFactory.settingsManager.GetString("MsrUndervoltGpu"), false, true);
             SettingsManager_SettingValueChanged("MsrUndervoltSoc", ManagerFactory.settingsManager.GetString("MsrUndervoltSoc"), false, true);
             SettingsManager_SettingValueChanged("EnhancedSleep", ManagerFactory.settingsManager.GetString("EnhancedSleep"), false, true);
+            SettingsManager_SettingValueChanged("QuickSleep", ManagerFactory.settingsManager.GetString("QuickSleep"), false, true);
             SettingsManager_SettingValueChanged("DockedDisplayBehavior", ManagerFactory.settingsManager.GetString("DockedDisplayBehavior"), false, true);
         }
 
@@ -228,6 +229,9 @@ namespace HandheldCompanion.Views.Pages
                         break;
                     case "EnhancedSleep":
                         Toggle_EnhancedSleep.IsOn = Convert.ToBoolean(value);
+                        break;
+                    case "QuickSleep":
+                        Toggle_QuickSleep.IsOn = Convert.ToBoolean(value);
                         break;
                     case "DockedDisplayBehavior":
                         cB_DockedDisplayBehavior.SelectedIndex = Convert.ToInt32(value);
@@ -629,6 +633,14 @@ namespace HandheldCompanion.Views.Pages
                 return;
 
             ManagerFactory.settingsManager.SetProperty("EnhancedSleep", Toggle_EnhancedSleep.IsOn);
+        }
+
+        private void Toggle_QuickSleep_Toggled(object sender, RoutedEventArgs e)
+        {
+            if (!IsLoaded)
+                return;
+
+            ManagerFactory.settingsManager.SetProperty("QuickSleep", Toggle_QuickSleep.IsOn);
         }
 
         #region Display
