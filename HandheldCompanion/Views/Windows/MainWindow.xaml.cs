@@ -1306,6 +1306,7 @@ public partial class MainWindow : GamepadWindow
             TaskManager.Stop();
             PerformanceManager.Stop();
             UpdateManager.Stop();
+            QuickSleep.Stop();
 
             // mark shutdown as completed
             shutdownCompleted = true;
