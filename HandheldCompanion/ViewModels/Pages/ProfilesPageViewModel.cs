@@ -2000,9 +2000,9 @@ namespace HandheldCompanion.ViewModels
             return SnapRefreshRate(GetRefreshRates(slot, monitor), frequency);
         }
 
-        // the default profile inherits the system display mode
+        // the default profile inherits the system display mode, Quick Tools uses the short label
         private string DisplayInheritFormat => SelectedProfile?.Default == true
-            ? Properties.Resources.OverrideMode_UseSystemSettings
+            ? (IsQuickTools ? Properties.Resources.OverrideMode_UseSystemSettingsShort : Properties.Resources.OverrideMode_UseSystemSettings)
             : Properties.Resources.OverrideMode_UseDefaultProfile;
 
         private string GetResolutionInheritLabel(int slot, DisplayMonitorOption monitor)

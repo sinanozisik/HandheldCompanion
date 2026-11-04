@@ -9147,7 +9147,7 @@ namespace HandheldCompanion.Properties {
         }
         
         /// <summary>
-        ///   Looks up a localized string similar to Use default profile ({0}).
+        ///   Looks up a localized string similar to Default profile ({0}).
         /// </summary>
         public static string OverrideMode_UseDefaultProfile {
             get {
@@ -9156,7 +9156,7 @@ namespace HandheldCompanion.Properties {
         }
         
         /// <summary>
-        ///   Looks up a localized string similar to Use power profile ({0}).
+        ///   Looks up a localized string similar to Power profile ({0}).
         /// </summary>
         public static string OverrideMode_UsePowerProfile {
             get {
@@ -9165,11 +9165,20 @@ namespace HandheldCompanion.Properties {
         }
         
         /// <summary>
-        ///   Looks up a localized string similar to Use system settings ({0}).
+        ///   Looks up a localized string similar to System settings ({0}).
         /// </summary>
         public static string OverrideMode_UseSystemSettings {
             get {
                 return ResourceManager.GetString("OverrideMode_UseSystemSettings", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Looks up a localized string similar to System ({0}).
+        /// </summary>
+        public static string OverrideMode_UseSystemSettingsShort {
+            get {
+                return ResourceManager.GetString("OverrideMode_UseSystemSettingsShort", resourceCulture);
             }
         }
         
