@@ -1313,6 +1313,7 @@ public partial class MainWindow : GamepadWindow
             TaskManager.Stop();
             PerformanceManager.Stop();
             UpdateManager.Stop();
+            QuickSleep.Stop();
 
             try
             {

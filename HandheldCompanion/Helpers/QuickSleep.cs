@@ -1,311 +1,1104 @@
-using HandheldCompanion.Controllers;
 using HandheldCompanion.Managers;
 using HandheldCompanion.Misc;
+using HandheldCompanion.Platforms;
 using HandheldCompanion.Shared;
+using HandheldCompanion.Utils;
+using HandheldCompanion.Views.Windows;
 using System;
+using System.Collections.Concurrent;
+using System.Collections.Generic;
+using System.Diagnostics;
+using System.IO;
+using System.Linq;
 using System.Runtime.InteropServices;
+using System.ServiceProcess;
+using System.Text;
+using System.Threading;
 using System.Threading.Tasks;
 
 namespace HandheldCompanion.Helpers;
 
+/// <summary>
+/// Quick Sleep/Wake: freezes the foreground game before Windows sleeps and thaws it and brings it back in front after wake.
+/// On devices with S3 the Quick Tools sleep is the regular SetSuspendState call, with the game frozen first.
+/// On Modern Standby devices a watcher follows the console display state while the setting is on. Whenever the
+/// display goes off for a sleep (power button, Quick Tools sleep, or an idle timeout that also sleeps) the game is frozen,
+/// and when the display comes back on it is thawed. The Quick Tools sleep only turns the display off there.
+/// </summary>
 public static class QuickSleep
 {
-    private const int PowerSystemSleeping3 = 4;
-    private const int SystemPowerPolicyAc = 0;
-    private const int SystemPowerPolicyDc = 1;
-    private const int SystemPowerCapabilities = 4;
-    private const int ExpectedPolicyBytes = 232;
+    // the game frozen by the current request, null when nothing is frozen
+    private static ProcessEx? frozen;
+    // a game left running because of its anti-cheat, still brought back in front after wake
+    private static ProcessEx? refocusOnly;
+    // the game window to bring back after wake, zero when the game was not in front
+    private static nint gameWindow;
+    private static int busy;
+
+    // display state watcher, Modern Standby only
+    // watcherLock guards the watcher state used by the callback, updateLock serializes register and unregister.
+    // Register and unregister run outside watcherLock, so they never wait on a callback that waits on them.
+    private static readonly object watcherLock = new();
+    private static readonly object updateLock = new();
+    private static readonly bool modernStandby = !PowerActionsHelper.IsSleepAvailable();
+    private static IntPtr registration = IntPtr.Zero;
+    private static bool watching;
+    private static int lastDisplayState = -1;
+    // tick of the last display off requested by Run, so that request always counts as a sleep
+    private static long requestedTick = long.MinValue;
+    private static bool started;
+
+    static QuickSleep()
+    {
+        SystemManager.SystemStatusChanged += SystemManager_SystemStatusChanged;
+    }
+
+    /// <summary>
+    /// Starts following the QuickSleep setting. The display watcher runs while the setting is on.
+    /// </summary>
+    public static void Start()
+    {
+        if (started)
+            return;
+        started = true;
+
+        ManagerFactory.settingsManager.SettingValueChanged += SettingsManager_SettingValueChanged;
+        ManagerFactory.processManager.ForegroundChanged += ProcessManager_ForegroundChanged;
+        ManagerFactory.processManager.ProcessStopped += ProcessManager_ProcessStopped;
+
+        bool enabled = ManagerFactory.settingsManager.GetBoolean("QuickSleep");
+        UpdateWatcher(enabled);
+
+        // a game already in front when HC starts raises no foreground change
+        if (enabled)
+            Task.Run(WarmForeground);
+    }
+
+    public static void Stop()
+    {
+        if (!started)
+            return;
+        started = false;
+
+        ManagerFactory.settingsManager.SettingValueChanged -= SettingsManager_SettingValueChanged;
+        ManagerFactory.processManager.ForegroundChanged -= ProcessManager_ForegroundChanged;
+        ManagerFactory.processManager.ProcessStopped -= ProcessManager_ProcessStopped;
+        UpdateWatcher(false);
+    }
+
+    private static bool HasPending()
+    {
+        return Volatile.Read(ref frozen) is not null || Volatile.Read(ref refocusOnly) is not null;
+    }
+
+    private static void SettingsManager_SettingValueChanged(string name, object? value, bool temporary, bool initializing)
+    {
+        if (name != "QuickSleep")
+            return;
+
+        bool enabled = Convert.ToBoolean(value);
+        UpdateWatcher(enabled);
+        if (enabled)
+            Task.Run(WarmForeground);
+    }
 
     public static async Task Run()
     {
         if (!ManagerFactory.settingsManager.GetBoolean("QuickSleep"))
         {
-            PowerActionsHelper.Sleep(force: false);
+            if (modernStandby)
+                PowerActionsHelper.TurnDisplayOff();
+            else
+                await Task.Run(() => PowerActionsHelper.Sleep(force: false)).ConfigureAwait(false);
             return;
         }
 
-        FrozenGame? frozen = null;
-        PolicySnapshot? ac = null;
-        PolicySnapshot? dc = null;
-        bool slept = false;
+        if (Interlocked.Exchange(ref busy, 1) == 1)
+        {
+            LogManager.LogInformation("[QuickSleep] Ignored, a sleep request is already running.");
+            return;
+        }
 
         try
         {
-            MultimediaManager.TurnOffScreen(false);
-            frozen = TryFreezeForeground();
-            ac = TryUseS3(SystemPowerPolicyAc);
-            dc = TryUseS3(SystemPowerPolicyDc);
+            if (modernStandby)
+            {
+                EnterStandby();
+                return;
+            }
 
-            slept = PowerActionsHelper.Sleep(force: true, disableWakeEvent: false);
-        }
-        catch (Exception ex)
-        {
-            LogManager.LogError("[QuickSleep] Entry failed: {0}", ex.Message);
+            FreezeNow(PrepareFreeze());
+
+            bool slept = false;
+            try
+            {
+                LogManager.LogInformation("[QuickSleep] Requesting sleep.");
+                slept = await Task.Run(() => PowerActionsHelper.Sleep(force: false)).ConfigureAwait(false);
+                LogManager.LogInformation("[QuickSleep] Sleep request returned {0}.", slept);
+            }
+            catch (Exception ex)
+            {
+                LogManager.LogError("[QuickSleep] Sleep request failed: {0}", ex.Message);
+            }
+
+            // While the system is still on its way down, the SystemReady handler thaws the game on wake.
+            // Otherwise the system is already back, or never left, so thaw now.
+            if (!slept || SystemManager.currentSystemStatus != SystemManager.SystemStatus.SystemPending)
+                await Thaw(refocus: slept).ConfigureAwait(false);
         }
         finally
         {
-            ac?.Restore();
-            dc?.Restore();
+            Interlocked.Exchange(ref busy, 0);
         }
-
-        if (!slept)
-        {
-            MultimediaManager.TurnOnScreen(false);
-            Resume(frozen);
-            return;
-        }
-
-        await ResumeWhenControllerReady(frozen).ConfigureAwait(false);
     }
 
-    private static FrozenGame? TryFreezeForeground()
+    /// <summary>
+    /// Modern Standby path: turn the display off and let Windows enter standby. The display watcher freezes the game
+    /// once the display is off and thaws it when the display is back on.
+    /// </summary>
+    private static void EnterStandby()
     {
+        // the setting may have just been turned on, make sure the watcher runs
+        UpdateWatcher(true);
+
+        lock (watcherLock)
+        {
+            if (!watching)
+                LogManager.LogWarning("[QuickSleep] Display watcher is not running, the game will not be frozen.");
+        }
+
+        Interlocked.Exchange(ref requestedTick, Environment.TickCount64);
+
+        LogManager.LogInformation("[QuickSleep] No S3 sleep on this device, turning the display off for Modern Standby.");
+        if (!PowerActionsHelper.TurnDisplayOff())
+        {
+            Interlocked.Exchange(ref requestedTick, long.MinValue);
+            LogManager.LogWarning("[QuickSleep] Could not turn the display off.");
+        }
+    }
+
+    // ---------- display state watcher ----------
+    private static readonly Guid GUID_CONSOLE_DISPLAY_STATE = new("6FE69556-704A-47A0-8F24-C28D936FDA47");
+    private const uint DEVICE_NOTIFY_CALLBACK = 2;
+    private const uint PBT_POWERSETTINGCHANGE = 0x8013;
+
+    // a display off within this time after Run asked for it is the Quick Sleep request
+    private static readonly TimeSpan RequestWindow = TimeSpan.FromSeconds(10);
+    // idle time this close to the display timeout counts as the timeout
+    private static readonly TimeSpan IdleMargin = TimeSpan.FromSeconds(5);
+
+    [UnmanagedFunctionPointer(CallingConvention.Winapi)]
+    private delegate uint DisplayCallback(IntPtr context, uint type, IntPtr setting);
+
+    // keeps the callback alive while native code holds it
+    private static readonly DisplayCallback displayCallback = OnDisplayCallback;
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct DEVICE_NOTIFY_SUBSCRIBE_PARAMETERS
+    {
+        public DisplayCallback Callback;
+        public IntPtr Context;
+    }
+
+    [DllImport("powrprof.dll")]
+    private static extern uint PowerSettingRegisterNotification(ref Guid settingGuid, uint flags, ref DEVICE_NOTIFY_SUBSCRIBE_PARAMETERS recipient, out IntPtr registrationHandle);
+
+    [DllImport("powrprof.dll")]
+    private static extern uint PowerSettingUnregisterNotification(IntPtr registrationHandle);
+
+    private static void UpdateWatcher(bool enabled)
+    {
+        // S3 devices keep the plain sleep path
+        if (!modernStandby)
+            return;
+
+        lock (updateLock)
+        {
+            if (enabled && registration == IntPtr.Zero)
+            {
+                lock (watcherLock)
+                {
+                    lastDisplayState = -1;
+                    watching = true;
+                }
+
+                Guid guid = GUID_CONSOLE_DISPLAY_STATE;
+                DEVICE_NOTIFY_SUBSCRIBE_PARAMETERS recipient = new() { Callback = displayCallback, Context = IntPtr.Zero };
+                uint result = PowerSettingRegisterNotification(ref guid, DEVICE_NOTIFY_CALLBACK, ref recipient, out IntPtr handle);
+                if (result != 0)
+                {
+                    lock (watcherLock)
+                        watching = false;
+                    LogManager.LogWarning("[QuickSleep] Could not watch the display state, error {0}.", result);
+                    return;
+                }
+
+                registration = handle;
+                LogManager.LogInformation("[QuickSleep] Display watcher started.");
+            }
+            else if (!enabled && registration != IntPtr.Zero)
+            {
+                lock (watcherLock)
+                    watching = false;
+
+                PowerSettingUnregisterNotification(registration);
+                registration = IntPtr.Zero;
+                LogManager.LogInformation("[QuickSleep] Display watcher stopped.");
+            }
+        }
+
+        // a game frozen just before the setting was turned off must not stay frozen
+        if (!enabled && HasPending())
+            _ = Thaw(refocus: false);
+    }
+
+    private static uint OnDisplayCallback(IntPtr context, uint type, IntPtr setting)
+    {
+        if (type != PBT_POWERSETTINGCHANGE || setting == IntPtr.Zero)
+            return 0;
+
         try
         {
-            ProcessEx? current = ProcessManager.GetCurrent();
-            if (current is null || current.ProcessId == 0 || current.ProcessId == Environment.ProcessId)
-                return null;
+            // POWERBROADCAST_SETTING: Guid (16), DataLength (4), Data
+            int state = Marshal.ReadInt32(setting, 20);
 
-            if (current.Process is null || current.Process.HasExited || current.IsSuspended)
-                return null;
+            // dimmed is not an off or on transition
+            if (state == 2)
+                return 0;
 
-            Profile profile = ManagerFactory.profileManager.GetProfileFromPath(current.Path, true);
-            if (profile.Default)
-                return null;
-
-            if (!ProcessManager.SuspendProcess(current.Handle, current.ProcessId))
+            lock (watcherLock)
             {
-                LogManager.LogWarning("[QuickSleep] Could not freeze {0}. Sleep continues.", current.Executable);
-                return null;
+                // Windows reports the current state right after registering, an on there finds nothing to thaw
+                if (!watching || state == lastDisplayState)
+                    return 0;
+
+                lastDisplayState = state;
+
+                if (state == 0)
+                {
+                    // the work stays on this thread and is fast: standby may follow within a second
+                    OnDisplayOff();
+                    return 0;
+                }
             }
 
-            LogManager.LogInformation("[QuickSleep] Froze {0} before suspend.", current.Executable);
-            return new FrozenGame(current.Handle, current.ProcessId, current.Executable);
+            if (state == 1 && HasPending())
+            {
+                LogManager.LogInformation("[QuickSleep] Display on, thawing.");
+                _ = Thaw(refocus: true);
+            }
         }
         catch (Exception ex)
         {
-            LogManager.LogWarning("[QuickSleep] Could not freeze the foreground game: {0}", ex.Message);
+            LogManager.LogWarning("[QuickSleep] Display state handling failed: {0}", ex.Message);
+        }
+
+        return 0;
+    }
+
+    private static void OnDisplayOff()
+    {
+        if (HasPending())
+            return;
+
+        // long.MinValue means no request: subtracting it would overflow into a negative and always count as requested
+        long tick = Interlocked.Exchange(ref requestedTick, long.MinValue);
+        bool requested = tick != long.MinValue && Environment.TickCount64 - tick <= (long)RequestWindow.TotalMilliseconds;
+        if (requested)
+            LogManager.LogInformation("[QuickSleep] Display off: requested by Quick Sleep {0:0.0}s ago, freeze True.", (Environment.TickCount64 - tick) / 1000.0);
+        else if (!ShouldFreezeOnDisplayOff())
+            return;
+
+        // freeze only once the display is off: a game frozen while it still owns the screen
+        // keeps the desktop compositor busy for the whole standby
+        FreezeTarget? target = PrepareFreeze();
+        if (target is null)
+        {
+            LogManager.LogInformation("[QuickSleep] Display off, no game to freeze.");
+            return;
+        }
+
+        FreezeNow(target);
+    }
+
+    /// <summary>
+    /// Tells a display off that goes with a sleep (power button, Start menu sleep, or an idle timeout that also
+    /// sleeps) apart from a display timeout that leaves the device awake.
+    /// </summary>
+    private static bool ShouldFreezeOnDisplayOff()
+    {
+        bool ac = IsOnAC();
+        PowerIndexType index = ac ? PowerIndexType.AC : PowerIndexType.DC;
+
+        uint displayTimeout = 0, sleepTimeout = 0, buttonAction = uint.MaxValue;
+        if (PowerScheme.GetActiveScheme(out Guid scheme))
+        {
+            PowerScheme.GetValue(index, scheme, SUB_VIDEO, VIDEOIDLE, out displayTimeout);
+            PowerScheme.GetValue(index, scheme, PowerSubGroup.SUB_SLEEP, STANDBYIDLE, out sleepTimeout);
+            if (!PowerScheme.GetValue(index, scheme, SUB_BUTTONS, PBUTTONACTION, out buttonAction))
+                buttonAction = uint.MaxValue;
+        }
+
+        TimeSpan idle = GetIdleTime();
+        bool displayRequired = IsDisplayRequired();
+
+        // the display cannot time out before the timeout, or while something holds it on
+        bool manual = displayTimeout == 0
+            || idle < TimeSpan.FromSeconds(displayTimeout) - IdleMargin
+            || displayRequired;
+
+        bool freeze;
+        string reason;
+        if (manual)
+        {
+            // a power button set to only turn the display off leaves the device awake
+            freeze = buttonAction != BUTTON_ACTION_DISPLAY_OFF;
+            reason = freeze ? "manual display off" : "manual display off, power button only turns the display off";
+        }
+        else
+        {
+            freeze = sleepTimeout != 0 && sleepTimeout <= displayTimeout;
+            reason = freeze ? "display timeout, sleep follows" : "display timeout, no sleep follows";
+        }
+
+        LogManager.LogInformation("[QuickSleep] Display off: {0}, freeze {1}. Source {2}, idle {3:0.0}s, display timeout {4}s, sleep timeout {5}s, display required {6}, power button action {7}.",
+            reason, freeze, ac ? "AC" : "DC", idle.TotalSeconds, displayTimeout, sleepTimeout, displayRequired, buttonAction);
+
+        return freeze;
+    }
+
+    // ---------- power settings ----------
+    private static readonly Guid SUB_VIDEO = new("7516B95F-F776-4464-8C53-06167F40CC99");
+    private static readonly Guid VIDEOIDLE = new("3C0BC021-C8A8-4E07-A973-6B14CBCB2B7E");
+    private static readonly Guid STANDBYIDLE = new("29F6C1DB-86DA-48C5-9FDB-F2B67B1F44DA");
+    private static readonly Guid SUB_BUTTONS = new("4F971E89-EEBD-4455-A8DE-9E59040E7347");
+    private static readonly Guid PBUTTONACTION = new("7648EFA3-DD9C-4E3E-B566-50F929386280");
+    private const uint BUTTON_ACTION_DISPLAY_OFF = 4;
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct SYSTEM_POWER_STATUS
+    {
+        public byte ACLineStatus;
+        public byte BatteryFlag;
+        public byte BatteryLifePercent;
+        public byte SystemStatusFlag;
+        public int BatteryLifeTime;
+        public int BatteryFullLifeTime;
+    }
+
+    [DllImport("kernel32.dll")]
+    private static extern bool GetSystemPowerStatus(out SYSTEM_POWER_STATUS status);
+
+    private static bool IsOnAC()
+    {
+        // unknown counts as AC, like Windows does for devices without a battery
+        return !GetSystemPowerStatus(out SYSTEM_POWER_STATUS status) || status.ACLineStatus != 0;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct LASTINPUTINFO
+    {
+        public uint cbSize;
+        public uint dwTime;
+    }
+
+    [DllImport("user32.dll")]
+    private static extern bool GetLastInputInfo(ref LASTINPUTINFO info);
+
+    [DllImport("kernel32.dll")]
+    private static extern uint GetTickCount();
+
+    private static TimeSpan GetIdleTime()
+    {
+        LASTINPUTINFO info = new() { cbSize = (uint)Marshal.SizeOf<LASTINPUTINFO>() };
+        if (!GetLastInputInfo(ref info))
+            return TimeSpan.Zero;
+
+        // both are 32-bit tick counts, the unsigned difference survives the wrap
+        return TimeSpan.FromMilliseconds(unchecked(GetTickCount() - info.dwTime));
+    }
+
+    private const int SystemExecutionState = 16;
+    private const uint ES_DISPLAY_REQUIRED = 0x00000002;
+
+    [DllImport("powrprof.dll")]
+    private static extern uint CallNtPowerInformation(int informationLevel, IntPtr inputBuffer, uint inputBufferLength, out uint outputBuffer, uint outputBufferLength);
+
+    private static bool IsDisplayRequired()
+    {
+        return CallNtPowerInformation(SystemExecutionState, IntPtr.Zero, 0, out uint state, sizeof(uint)) == 0
+            && (state & ES_DISPLAY_REQUIRED) != 0;
+    }
+
+    private static async void SystemManager_SystemStatusChanged(SystemManager.SystemStatus status, SystemManager.SystemStatus prevStatus)
+    {
+        if (status == SystemManager.SystemStatus.SystemReady && prevStatus == SystemManager.SystemStatus.SystemPending)
+            await Thaw(refocus: true).ConfigureAwait(false);
+    }
+
+    private sealed record FreezeTarget(ProcessEx Game, nint Window, List<Process> Children, string? AntiCheat);
+
+    /// <summary>
+    /// Finds the game in front and its child processes, without freezing anything yet.
+    /// The target comes from the window in front, not from ProcessManager.GetCurrent(): that one can be stale,
+    /// for example for a game that was already in front when HC started.
+    /// </summary>
+    private static FreezeTarget? PrepareFreeze()
+    {
+        try
+        {
+            // look at the window before the freeze, the game cannot answer once frozen
+            (nint window, string source) = FindTargetWindow();
+            if (window == 0)
+            {
+                LogManager.LogInformation("[QuickSleep] No window to freeze ({0}).", source);
+                return null;
+            }
+
+            ProcessEx? game = ResolveProcess(window, log: true);
+            if (game is null)
+                return null;
+
+            if (game.Process is null || game.Process.HasExited || game.IsSuspended)
+                return null;
+
+            string? notGame = GetNotGameReason(game, window);
+            if (notGame is not null)
+            {
+                LogManager.LogInformation("[QuickSleep] {0} (pid {1}, {2}) is not a game: {3}, not freezing.", game.Executable, game.ProcessId, source, notGame);
+                return null;
+            }
+
+            bool platform = game.Platform != GamePlatform.Generic;
+            bool fullscreen = CoversMonitor(window);
+            if (!platform && !fullscreen)
+            {
+                LogManager.LogInformation("[QuickSleep] {0} (pid {1}, {2}) is not a game (platform {3}, fullscreen {4}), not freezing.", game.Executable, game.ProcessId, source, game.Platform, fullscreen);
+                return null;
+            }
+
+            LogManager.LogInformation("[QuickSleep] {0} (pid {1}, {2}) is a game (platform {3}, fullscreen {4}), refocus after wake.", game.Executable, game.ProcessId, source, game.Platform, fullscreen);
+
+            List<SnapshotEntry> snapshot = TakeProcessSnapshot();
+            string? antiCheat = IsAntiCheatProtected(game, snapshot);
+            List<Process> children = antiCheat is null ? GetChildProcesses(game.ProcessId, snapshot) : new();
+            return new FreezeTarget(game, window, children, antiCheat);
+        }
+        catch (Exception ex)
+        {
+            LogManager.LogWarning("[QuickSleep] Could not find the game in front: {0}", ex.Message);
             return null;
         }
     }
 
-    private static async Task ResumeWhenControllerReady(FrozenGame? frozen)
+    // platform helpers missing from HC's launcher list (ProcessEx.IsLauncher)
+    private static readonly HashSet<string> PlatformHelperExecutables = new(StringComparer.OrdinalIgnoreCase)
     {
-        if (frozen is null)
-            return;
+        "gameoverlayui.exe", "gameoverlayui64.exe", "steamerrorreporter.exe",
+        "GalaxyClient Helper.exe",
+        "RiotClientServices.exe", "RiotClientUx.exe", "RiotClientUxRender.exe", "Riot Client.exe",
+        "EOSOverlayRenderer-Win64-Shipping.exe",
+    };
 
-        DateTime deadline = DateTime.UtcNow.AddSeconds(10);
-        while (DateTime.UtcNow < deadline)
+    /// <summary>
+    /// Why the process in front is never a game, or null. A platform's own client and helpers get that platform
+    /// from PlatformManager (Steam lists steamwebhelper.exe among its modules), so the platform alone does not
+    /// make a game.
+    /// </summary>
+    private static string? GetNotGameReason(ProcessEx process, nint window)
+    {
+        if (process.ProcessId == Environment.ProcessId)
+            return "Handheld Companion";
+
+        string exe = process.Executable ?? string.Empty;
+
+        switch (ProcessManager.GetFilter(exe, process.Path ?? string.Empty, string.Empty, GetWindowClass(window)))
         {
-            IController? controller = ControllerManager.GetTarget();
-            if (controller is not null && controller.IsReady && controller.IsConnected())
-                break;
-
-            await Task.Delay(250).ConfigureAwait(false);
+            case ProcessEx.ProcessFilter.HandheldCompanion:
+                return "Handheld Companion";
+            case ProcessEx.ProcessFilter.Restricted:
+                return "system or tool process";
+            case ProcessEx.ProcessFilter.Desktop:
+                return "desktop";
         }
 
-        if (frozen is not FrozenGame game)
-            return;
+        if (process.IsLauncher)
+            return "game platform client";
 
-        IController? ready = ControllerManager.GetTarget();
-        if (ready is null || !ready.IsReady || !ready.IsConnected())
-            LogManager.LogWarning("[QuickSleep] Controller was not back after 10s. Thawing {0} anyway.", game.Executable);
+        if (PlatformHelperExecutables.Contains(exe))
+            return "game platform helper";
 
-        Resume(game);
+        // the platform's own executable, as GameLib reports it
+        List<IPlatform>? platforms = PlatformManager.GamingPlatforms;
+        if (platforms is not null)
+        {
+            foreach (IPlatform platform in platforms)
+            {
+                try
+                {
+                    string own = platform.ExecutableName;
+                    if (!string.IsNullOrEmpty(own) && exe.Equals(own, StringComparison.OrdinalIgnoreCase))
+                        return $"{platform.Name} client";
+                }
+                catch
+                {
+                    // platform not installed
+                }
+            }
+        }
+
+        return null;
     }
 
-    private static void Resume(FrozenGame? frozen)
+    /// <summary>
+    /// The ProcessEx that owns the window: the one HC already tracks, or a local one when HC does not track it.
+    /// </summary>
+    private static ProcessEx? ResolveProcess(nint window, bool log)
     {
-        if (frozen is not FrozenGame game)
-            return;
+        int processId = GetWindowProcessId(window);
+
+        // a UWP frame belongs to ApplicationFrameHost, the game is the hosted process
+        if (GetWindowClass(window) == "ApplicationFrameWindow")
+        {
+            var hosted = new ProcessUtils.FindHostedProcess(window)._realProcess;
+            if (hosted is not null)
+                processId = (int)hosted.ProcessId;
+        }
+
+        if (processId == 0 || processId == Environment.ProcessId)
+            return null;
+
+        ProcessEx? tracked = ProcessManager.GetProcess(processId);
+        if (tracked is not null)
+            return tracked;
 
         try
         {
-            if (!ProcessManager.ResumeProcess(game.Handle, game.ProcessId))
-                LogManager.LogWarning("[QuickSleep] Could not thaw {0}.", game.Executable);
-            else
+            Process process = Process.GetProcessById(processId);
+            if (process.HasExited)
+                return null;
+
+            string? path = ProcessUtils.GetPathToApp(processId);
+            if (string.IsNullOrEmpty(path))
+            {
+                if (log)
+                    LogManager.LogInformation("[QuickSleep] Could not read the path of pid {0}, not freezing.", processId);
+                return null;
+            }
+
+            string exe = Path.GetFileName(path);
+            ProcessEx local = new(process, path, exe, ProcessManager.GetFilter(exe, path));
+            local.Platform = PlatformManager.GetPlatform(local);
+
+            if (log)
+                LogManager.LogInformation("[QuickSleep] {0} (pid {1}) is not tracked by HC, looked it up directly.", exe, processId);
+            return local;
+        }
+        catch (Exception ex)
+        {
+            if (log)
+                LogManager.LogInformation("[QuickSleep] Could not look up pid {0}: {1}", processId, ex.Message);
+            return null;
+        }
+    }
+
+    private static void FreezeNow(FreezeTarget? target)
+    {
+        if (target is null)
+            return;
+
+        ProcessEx game = target.Game;
+        try
+        {
+            if (game.Process is null || game.Process.HasExited)
+                return;
+
+            if (target.AntiCheat is not null)
+            {
+                // frozen threads can look like tampering to an anti-cheat and risk a ban, so Windows handles the sleep
+                LogManager.LogInformation("[QuickSleep] Anti-cheat detected ({0}), not freezing {1}.", target.AntiCheat, game.Executable);
+                if (target.Window != 0)
+                {
+                    Interlocked.Exchange(ref gameWindow, target.Window);
+                    Interlocked.Exchange(ref refocusOnly, game);
+                }
+                return;
+            }
+
+            foreach (Process child in target.Children.Where(p => !p.HasExited))
+                ProcessUtils.NtSuspendProcess(child.Handle);
+
+            if (ProcessUtils.NtSuspendProcess(game.Handle) != 0)
+            {
+                LogManager.LogWarning("[QuickSleep] Could not freeze {0}. Sleep continues.", game.Executable);
+                return;
+            }
+
+            // the window first, Thaw takes the game and then the window
+            Interlocked.Exchange(ref gameWindow, target.Window);
+            Interlocked.Exchange(ref frozen, game);
+            LogManager.LogInformation("[QuickSleep] Froze {0} and {1} child process(es).", game.Executable, target.Children.Count);
+        }
+        catch (Exception ex)
+        {
+            LogManager.LogWarning("[QuickSleep] Could not freeze {0}: {1}", game.Executable, ex.Message);
+        }
+    }
+
+    private static async Task Thaw(bool refocus)
+    {
+        // take ownership once, so the wake handlers never thaw the same game twice
+        ProcessEx? game = Interlocked.Exchange(ref frozen, null);
+        if (game is null)
+        {
+            // a game that was left running only needs the refocus
+            game = Interlocked.Exchange(ref refocusOnly, null);
+            if (game is null)
+                return;
+
+            nint window = Interlocked.Exchange(ref gameWindow, 0);
+            if (refocus)
+                await Refocus(game, window).ConfigureAwait(false);
+            return;
+        }
+
+        nint hWnd = Interlocked.Exchange(ref gameWindow, 0);
+
+        try
+        {
+            if (await ProcessManager.ResumeProcess(game, false).ConfigureAwait(false))
                 LogManager.LogInformation("[QuickSleep] Thawed {0}.", game.Executable);
+            else
+                LogManager.LogWarning("[QuickSleep] Could not thaw {0}.", game.Executable);
         }
         catch (Exception ex)
         {
             LogManager.LogWarning("[QuickSleep] Could not thaw {0}: {1}", game.Executable, ex.Message);
         }
+
+        if (refocus)
+            await Refocus(game, hWnd).ConfigureAwait(false);
     }
 
-    private static PolicySnapshot? TryUseS3(int level)
-    {
-        if (!FirmwareSupportsS3())
-            return null;
+    // ---------- child processes ----------
+    private const uint TH32CS_SNAPPROCESS = 0x00000002;
+    private static readonly IntPtr INVALID_HANDLE_VALUE = new(-1);
 
-        int policyBytes = Marshal.SizeOf<SystemPowerPolicy>();
-        if (policyBytes != ExpectedPolicyBytes)
+    [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
+    private struct PROCESSENTRY32
+    {
+        public uint dwSize;
+        public uint cntUsage;
+        public uint th32ProcessID;
+        public IntPtr th32DefaultHeapID;
+        public uint th32ModuleID;
+        public uint cntThreads;
+        public uint th32ParentProcessID;
+        public int pcPriClassBase;
+        public uint dwFlags;
+        [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 260)]
+        public string szExeFile;
+    }
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    private static extern IntPtr CreateToolhelp32Snapshot(uint flags, uint processId);
+
+    [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+    private static extern bool Process32FirstW(IntPtr snapshot, ref PROCESSENTRY32 entry);
+
+    [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+    private static extern bool Process32NextW(IntPtr snapshot, ref PROCESSENTRY32 entry);
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    private static extern bool CloseHandle(IntPtr handle);
+
+    private readonly record struct SnapshotEntry(int ProcessId, int ParentId, string Executable);
+
+    /// <summary>
+    /// All running processes from a kernel process snapshot. Unlike a WMI query it takes milliseconds,
+    /// so it can run after the display is off without running into standby.
+    /// </summary>
+    private static List<SnapshotEntry> TakeProcessSnapshot()
+    {
+        List<SnapshotEntry> entries = new();
+
+        IntPtr snapshot = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
+        if (snapshot == INVALID_HANDLE_VALUE)
+            return entries;
+
+        try
         {
-            LogManager.LogWarning("[QuickSleep] Power policy layout is {0} bytes, expected {1}. S3 was not applied.", policyBytes, ExpectedPolicyBytes);
-            return null;
+            PROCESSENTRY32 entry = new() { dwSize = (uint)Marshal.SizeOf<PROCESSENTRY32>() };
+            for (bool ok = Process32FirstW(snapshot, ref entry); ok; ok = Process32NextW(snapshot, ref entry))
+                entries.Add(new SnapshotEntry((int)entry.th32ProcessID, (int)entry.th32ParentProcessID, entry.szExeFile ?? string.Empty));
+        }
+        finally
+        {
+            CloseHandle(snapshot);
         }
 
-        byte[]? original = ReadPolicy(level, policyBytes);
-        if (original is null)
-            return null;
-
-        int minSleep = BitConverter.ToInt32(original, MinSleepOffset);
-        int maxSleep = BitConverter.ToInt32(original, MaxSleepOffset);
-        if (minSleep == PowerSystemSleeping3 && maxSleep == PowerSystemSleeping3)
-            return null;
-
-        byte[] updated = (byte[])original.Clone();
-        BitConverter.TryWriteBytes(updated.AsSpan(MinSleepOffset), PowerSystemSleeping3);
-        BitConverter.TryWriteBytes(updated.AsSpan(MaxSleepOffset), PowerSystemSleeping3);
-
-        if (!WritePolicy(level, updated))
-            return null;
-
-        LogManager.LogInformation("[QuickSleep] Sleep range for policy {0} set to S3.", level);
-        return new PolicySnapshot(level, original);
+        return entries;
     }
 
-    private static bool? s3Supported;
-
-    private static bool FirmwareSupportsS3()
+    /// <summary>
+    /// Direct child processes of the given process, from a snapshot.
+    /// </summary>
+    private static List<Process> GetChildProcesses(int parentId, List<SnapshotEntry> snapshot)
     {
-        if (s3Supported.HasValue)
-            return s3Supported.Value;
-
-        byte[] caps = new byte[16];
-        uint status = CallNtPowerInformation(SystemPowerCapabilities, null, 0, caps, caps.Length);
-        if (status != 0)
+        List<Process> children = new();
+        foreach (SnapshotEntry entry in snapshot)
         {
-            LogManager.LogWarning("[QuickSleep] Could not read sleep capabilities: 0x{0:X8}", status);
-            s3Supported = false;
+            if (entry.ParentId != parentId || entry.ProcessId == parentId)
+                continue;
+
+            try
+            {
+                children.Add(Process.GetProcessById(entry.ProcessId));
+            }
+            catch
+            {
+                // exited in the meantime
+            }
+        }
+
+        return children;
+    }
+
+    // ---------- anti-cheat ----------
+    // Freezing a protected game can look like tampering and risk a ban, so those games are left to Windows.
+
+    // files and folders shipped in the game install, checked by exact path, never by listing a folder
+    private static readonly (string Path, string Name)[] AntiCheatMarkers =
+    [
+        ("EasyAntiCheat", "Easy Anti-Cheat"),
+        ("start_protected_game.exe", "Easy Anti-Cheat"),
+        ("EasyAntiCheat_x64.dll", "Easy Anti-Cheat"),
+        ("BattlEye", "BattlEye"),
+        ("EAAntiCheat", "EA Javelin"),
+        (Path.Combine("__Installer", "EAAntiCheat"), "EA Javelin"),
+        ("GameGuard", "nProtect GameGuard"),
+        (Path.Combine("pb", "pbcl.dll"), "PunkBuster"),
+    ];
+
+    // processes that only run while a protected game runs, so seeing one anywhere means the game in front is protected
+    private static readonly Dictionary<string, string> SessionAntiCheatProcesses = new(StringComparer.OrdinalIgnoreCase)
+    {
+        ["EasyAntiCheat.exe"] = "Easy Anti-Cheat",
+        ["EasyAntiCheat_EOS.exe"] = "Easy Anti-Cheat",
+        ["BEService.exe"] = "BattlEye",
+        ["BEService_x64.exe"] = "BattlEye",
+        ["EAAntiCheat.GameService.exe"] = "EA Javelin",
+        ["SGuard64.exe"] = "Anti-Cheat Expert",
+        ["SGuardSvc64.exe"] = "Anti-Cheat Expert",
+        ["GameMon.des"] = "nProtect GameGuard",
+        ["GameMon64.des"] = "nProtect GameGuard",
+    };
+
+    // folder names that end the walk up from the game: a library root is not part of one game
+    private static readonly HashSet<string> LibraryRoots = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "common", "steamapps", "SteamLibrary", "Steam", "Program Files", "Program Files (x86)", "Epic Games",
+        "GOG Games", "GOG Galaxy", "XboxGames", "EA Games", "Ubisoft Game Launcher", "games", "Riot Games", "HoYoPlay",
+    };
+
+    // the exe folder and up to three parents, Unreal games keep the exe in Binaries\Win64 below the game root
+    private const int MarkerDepth = 4;
+
+    // per process id: the anti-cheat named by files in the game install, or null
+    private static readonly ConcurrentDictionary<int, (string Path, string? AntiCheat)> markerCache = new();
+
+    private static void ProcessManager_ForegroundChanged(ProcessEx? processEx, ProcessEx? backgroundEx, ProcessEx.ProcessFilter filter)
+    {
+        // read the game install while the game is in front, so the display off only reads the cache
+        if (processEx is null || processEx.ProcessId == 0 || processEx.ProcessId == Environment.ProcessId)
+            return;
+
+        if (!ManagerFactory.settingsManager.GetBoolean("QuickSleep") || IsMarkerCached(processEx))
+            return;
+
+        Task.Run(() => GetMarkerAntiCheat(processEx));
+    }
+
+    /// <summary>
+    /// Reads the install of the game in front ahead of time, the same way the display off picks it.
+    /// </summary>
+    private static void WarmForeground()
+    {
+        try
+        {
+            (nint window, _) = FindTargetWindow();
+            if (window == 0)
+                return;
+
+            ProcessEx? game = ResolveProcess(window, log: false);
+            if (game is not null && GetNotGameReason(game, window) is null)
+                GetMarkerAntiCheat(game);
+        }
+        catch
+        {
+            // the display off computes it if needed
+        }
+    }
+
+    private static bool IsMarkerCached(ProcessEx game)
+    {
+        return markerCache.TryGetValue(game.ProcessId, out var cached)
+            && string.Equals(cached.Path, game.Path ?? string.Empty, StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static void ProcessManager_ProcessStopped(ProcessEx processEx)
+    {
+        markerCache.TryRemove(processEx.ProcessId, out _);
+    }
+
+    private static string? GetMarkerAntiCheat(ProcessEx game)
+    {
+        string path = game.Path ?? string.Empty;
+        if (markerCache.TryGetValue(game.ProcessId, out var cached) && string.Equals(cached.Path, path, StringComparison.OrdinalIgnoreCase))
+            return cached.AntiCheat;
+
+        string? antiCheat = FindAntiCheatMarker(path);
+        markerCache[game.ProcessId] = (path, antiCheat);
+        return antiCheat;
+    }
+
+    private static string? FindAntiCheatMarker(string exePath)
+    {
+        try
+        {
+            string? dir = Path.GetDirectoryName(exePath);
+            for (int depth = 0; depth < MarkerDepth && !string.IsNullOrEmpty(dir); depth++)
+            {
+                DirectoryInfo info = new(dir);
+                // stop at a drive root or a library folder
+                if (info.Parent is null || LibraryRoots.Contains(info.Name))
+                    break;
+
+                foreach ((string marker, string name) in AntiCheatMarkers)
+                {
+                    string path = Path.Combine(dir, marker);
+                    if (Directory.Exists(path) || File.Exists(path))
+                        return $"{name}, {path}";
+                }
+
+                // the game root sits right under a library folder, nothing above it belongs to the game
+                if (LibraryRoots.Contains(info.Parent.Name))
+                    break;
+
+                dir = info.Parent.FullName;
+            }
+        }
+        catch (Exception ex)
+        {
+            LogManager.LogWarning("[QuickSleep] Could not look for anti-cheat files of {0}: {1}", exePath, ex.Message);
+        }
+
+        return null;
+    }
+
+    /// <summary>
+    /// Returns the anti-cheat protecting the game, or null. Cheap enough for the display off: the install files
+    /// are read once per process and cached, processes come from the snapshot, and a service is only queried
+    /// when the game itself points at that anti-cheat.
+    /// </summary>
+    private static string? IsAntiCheatProtected(ProcessEx game, List<SnapshotEntry> snapshot)
+    {
+        // (a) files and folders in the game install
+        string? marker = GetMarkerAntiCheat(game);
+        if (marker is not null)
+            return marker;
+
+        // (b) anti-cheat processes that only run with a protected game
+        foreach (SnapshotEntry entry in snapshot)
+        {
+            if (SessionAntiCheatProcesses.TryGetValue(entry.Executable, out string? name))
+                return $"{name}, {entry.Executable} running";
+        }
+
+        // (c) always-on anti-cheat services, only when the game belongs to them
+        string path = game.Path ?? string.Empty;
+        string exe = game.Executable ?? string.Empty;
+
+        if (game.Platform == GamePlatform.RiotGames && IsServiceRunning("vgc"))
+            return "Riot Vanguard, vgc service";
+
+        if (path.Contains("Call of Duty", StringComparison.OrdinalIgnoreCase) && IsServiceRunning("atvi-brynhildr"))
+            return "Ricochet, atvi-brynhildr service";
+
+        if ((exe.Equals("cs2.exe", StringComparison.OrdinalIgnoreCase) || exe.Equals("csgo.exe", StringComparison.OrdinalIgnoreCase)) && IsServiceRunning("FACEIT"))
+            return "FACEIT, FACEIT service";
+
+        if ((path.Contains("HoYoPlay", StringComparison.OrdinalIgnoreCase) || path.Contains("miHoYo", StringComparison.OrdinalIgnoreCase) || path.Contains("Genshin Impact", StringComparison.OrdinalIgnoreCase))
+            && (IsServiceRunning("mhyprot2") || IsServiceRunning("mhyprot3")))
+            return "HoYoverse mhyprot, mhyprot service";
+
+        return null;
+    }
+
+    private static bool IsServiceRunning(string name)
+    {
+        try
+        {
+            using ServiceController service = new(name);
+            return service.Status == ServiceControllerStatus.Running;
+        }
+        catch
+        {
+            // not installed
             return false;
         }
-
-        s3Supported = caps[5] != 0;
-        if (!s3Supported.Value)
-            LogManager.LogInformation("[QuickSleep] Firmware has no S3. Critical suspend stays on the current sleep state.");
-        return s3Supported.Value;
     }
 
-    private static byte[]? ReadPolicy(int level, int bytes)
+    // ---------- game window ----------
+    private const uint MONITOR_DEFAULTTONULL = 0;
+    private const int GWL_STYLE = -16;
+    private const int WS_CAPTION = 0x00C00000;
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct RECT
     {
-        byte[] buffer = new byte[bytes];
-        uint status = CallNtPowerInformation(level, null, 0, buffer, buffer.Length);
-        if (status != 0)
+        public int Left, Top, Right, Bottom;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct MONITORINFO
+    {
+        public int cbSize;
+        public RECT rcMonitor;
+        public RECT rcWork;
+        public uint dwFlags;
+    }
+
+    [DllImport("user32.dll")]
+    private static extern IntPtr MonitorFromWindow(IntPtr hWnd, uint flags);
+
+    [DllImport("user32.dll")]
+    private static extern bool GetMonitorInfo(IntPtr hMonitor, ref MONITORINFO info);
+
+    [DllImport("user32.dll")]
+    private static extern bool GetWindowRect(IntPtr hWnd, out RECT rect);
+
+    [DllImport("user32.dll")]
+    private static extern bool IsZoomed(IntPtr hWnd);
+
+    [DllImport("user32.dll")]
+    private static extern IntPtr GetShellWindow();
+
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)]
+    private static extern int GetClassName(IntPtr hWnd, StringBuilder className, int maxCount);
+
+    /// <summary>
+    /// True when the window covers the whole monitor it is on: exclusive or borderless fullscreen.
+    /// A maximized window with a title bar is not fullscreen, even when the taskbar hides.
+    /// </summary>
+    private static bool CoversMonitor(nint hWnd)
+    {
+        if (hWnd == 0 || hWnd == GetShellWindow() || hWnd == WinAPI.GetDesktopWindow())
+            return false;
+
+        string name = GetWindowClass(hWnd);
+        if (name is "Progman" or "WorkerW" or "Shell_TrayWnd" or "Shell_SecondaryTrayWnd")
+            return false;
+
+        if (IsZoomed(hWnd) && (WinAPI.GetWindowLong(hWnd, GWL_STYLE) & WS_CAPTION) == WS_CAPTION)
+            return false;
+
+        IntPtr monitor = MonitorFromWindow(hWnd, MONITOR_DEFAULTTONULL);
+        if (monitor == IntPtr.Zero)
+            return false;
+
+        MONITORINFO info = new() { cbSize = Marshal.SizeOf<MONITORINFO>() };
+        if (!GetMonitorInfo(monitor, ref info) || !GetWindowRect(hWnd, out RECT rect))
+            return false;
+
+        return rect.Left <= info.rcMonitor.Left && rect.Top <= info.rcMonitor.Top
+            && rect.Right >= info.rcMonitor.Right && rect.Bottom >= info.rcMonitor.Bottom;
+    }
+
+    private const int DWMWA_CLOAKED = 14;
+
+    [DllImport("dwmapi.dll")]
+    private static extern int DwmGetWindowAttribute(IntPtr hWnd, int attribute, out int value, int size);
+
+    private static bool IsCloaked(nint hWnd)
+    {
+        return DwmGetWindowAttribute(hWnd, DWMWA_CLOAKED, out int cloaked, sizeof(int)) == 0 && cloaked != 0;
+    }
+
+    private static string GetWindowClass(nint hWnd)
+    {
+        StringBuilder className = new(256);
+        GetClassName(hWnd, className, className.Capacity);
+        return className.ToString();
+    }
+
+    /// <summary>
+    /// The window in front, or the first eligible window right below Quick Tools when Quick Tools is in front.
+    /// Zero when there is none, with the reason as the source.
+    /// </summary>
+    private static (nint Window, string Source) FindTargetWindow()
+    {
+        nint foreground = WinAPI.GetForegroundWindow();
+        if (foreground == 0)
+            return (0, "no foreground window");
+
+        if (foreground != GetQuickToolsHandle())
+            return (foreground, "in front");
+
+        // first visible window below Quick Tools, skipping HC, hidden UWP frames and tool windows such as overlays
+        for (nint hWnd = WinAPI.GetWindow(foreground, WinAPI.GW_HWNDNEXT); hWnd != 0; hWnd = WinAPI.GetWindow(hWnd, WinAPI.GW_HWNDNEXT))
         {
-            LogManager.LogWarning("[QuickSleep] Could not read power policy {0}: 0x{1:X8}", level, status);
-            return null;
+            if (!ProcessUtils.IsWindowVisible(hWnd) || IsCloaked(hWnd) || GetWindowProcessId(hWnd) == Environment.ProcessId)
+                continue;
+
+            if ((WinAPI.GetWindowLong(hWnd, WinAPI.GWL_EXSTYLE) & WinAPI.WS_EX_TOOLWINDOW) != 0)
+                continue;
+
+            return (hWnd, "behind Quick Tools");
         }
 
-        uint revision = BitConverter.ToUInt32(buffer, 0);
-        if (revision != 1)
+        return (0, "nothing behind Quick Tools");
+    }
+
+    private static async Task Refocus(ProcessEx game, nint hWnd)
+    {
+        if (hWnd == 0)
+            return;
+
+        if (game.Process is null || game.Process.HasExited || !WinAPI.IsWindow(hWnd))
         {
-            LogManager.LogWarning("[QuickSleep] Power policy {0} revision is {1}. S3 was not applied.", level, revision);
-            return null;
+            LogManager.LogInformation("[QuickSleep] Skip refocus, {0} or its window is gone.", game.Executable);
+            return;
         }
 
-        return buffer;
+        // let the display and the game settle after wake
+        await Task.Delay(500).ConfigureAwait(false);
+
+        if (ProcessUtils.IsIconic(hWnd))
+            ProcessUtils.ShowWindow(hWnd, (int)ProcessUtils.ShowWindowCommands.Restored);
+
+        bool focused = ProcessUtils.SetForegroundWindow(hWnd);
+        LogManager.LogInformation("[QuickSleep] Refocus {0} returned {1}.", game.Executable, focused);
     }
 
-    private static bool WritePolicy(int level, byte[] buffer)
+    private static int GetWindowProcessId(nint hWnd)
     {
-        uint status = CallNtPowerInformation(level, buffer, buffer.Length, null, 0);
-        if (status == 0)
-            return true;
+        if (hWnd == 0)
+            return 0;
 
-        LogManager.LogWarning("[QuickSleep] Could not write power policy {0}: 0x{1:X8}", level, status);
-        return false;
+        WinAPI.GetWindowThreadProcessId(hWnd, out int processId);
+        return processId;
     }
 
-    private static readonly int MinSleepOffset = Marshal.OffsetOf<SystemPowerPolicy>(nameof(SystemPowerPolicy.MinSleep)).ToInt32();
-    private static readonly int MaxSleepOffset = Marshal.OffsetOf<SystemPowerPolicy>(nameof(SystemPowerPolicy.MaxSleep)).ToInt32();
-
-    [DllImport("powrprof.dll")]
-    private static extern uint CallNtPowerInformation(
-        int informationLevel,
-        byte[]? inputBuffer,
-        int inputBufferLength,
-        byte[]? outputBuffer,
-        int outputBufferLength);
-
-    private readonly record struct FrozenGame(nint Handle, int ProcessId, string Executable);
-
-    private sealed class PolicySnapshot
+    private static nint GetQuickToolsHandle()
     {
-        private readonly int level;
-        private readonly byte[] original;
-
-        public PolicySnapshot(int level, byte[] original)
+        try
         {
-            this.level = level;
-            this.original = original;
+            return OverlayQuickTools.GetCurrent()?.GetHandle() ?? 0;
         }
-
-        public void Restore()
+        catch
         {
-            if (WritePolicy(level, original))
-                LogManager.LogInformation("[QuickSleep] Restored power policy {0}.", level);
+            return 0;
         }
-    }
-
-    [StructLayout(LayoutKind.Sequential, Pack = 4)]
-    private struct PowerActionPolicy
-    {
-        public int Action;
-        public uint Flags;
-        public uint EventCode;
-    }
-
-    [StructLayout(LayoutKind.Sequential, Pack = 4)]
-    private struct SystemPowerLevel
-    {
-        public byte Enable;
-        public byte Spare0;
-        public byte Spare1;
-        public byte Spare2;
-        public uint BatteryLevel;
-        public PowerActionPolicy PowerPolicy;
-        public int MinSystemState;
-    }
-
-    [StructLayout(LayoutKind.Sequential, Pack = 4)]
-    private struct SystemPowerPolicy
-    {
-        public uint Revision;
-        public PowerActionPolicy PowerButton;
-        public PowerActionPolicy SleepButton;
-        public PowerActionPolicy LidClose;
-        public int LidOpenWake;
-        public uint Reserved;
-        public PowerActionPolicy Idle;
-        public uint IdleTimeout;
-        public byte IdleSensitivity;
-        public byte DynamicThrottle;
-        public byte Spare2_0;
-        public byte Spare2_1;
-        public int MinSleep;
-        public int MaxSleep;
-        public int ReducedLatencySleep;
-        public uint WinLogonFlags;
-        public uint Spare3;
-        public uint DozeS4Timeout;
-        public uint BroadcastCapacityResolution;
-        public SystemPowerLevel Discharge0;
-        public SystemPowerLevel Discharge1;
-        public SystemPowerLevel Discharge2;
-        public SystemPowerLevel Discharge3;
-        public uint VideoTimeout;
-        public byte VideoDimDisplay;
-        public byte VideoPad0;
-        public byte VideoPad1;
-        public byte VideoPad2;
-        public uint VideoReserved0;
-        public uint VideoReserved1;
-        public uint VideoReserved2;
-        public uint SpindownTimeout;
-        public byte OptimizeForPower;
-        public byte FanThrottleTolerance;
-        public byte ForcedThrottle;
-        public byte MinThrottle;
-        public PowerActionPolicy OverThrottled;
     }
 }

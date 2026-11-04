@@ -4354,10 +4354,10 @@ Thank you for using HC and helping us make it better.</value>
     <value>Optimizes Modern Standby power policies to reduce sleep drain (e.g., disables wake timers and network activity).</value>
   </data>
   <data name="DevicePage_QuickSleep" xml:space="preserve">
-    <value>Quick sleep</value>
+    <value>Quick Sleep/Wake</value>
   </data>
   <data name="DevicePage_QuickSleepDesc" xml:space="preserve">
-    <value>Experimental. May not work on every device. Blanks the screen and enters a critical suspend, using S3 when the firmware supports it.</value>
+    <value>Experimental. Pauses the foreground game while the device sleeps and brings it back right after wake. Games with anti-cheat are not paused.</value>
   </data>
   <data name="ProfilesPage_Whitelist" xml:space="preserve">
     <value>Controller passthrough</value>

@@ -1546,7 +1546,7 @@ namespace HandheldCompanion.Properties {
         }
         
         /// <summary>
-        ///   Looks up a localized string similar to Quick sleep.
+        ///   Looks up a localized string similar to Quick Sleep/Wake.
         /// </summary>
         public static string DevicePage_QuickSleep {
             get {
@@ -1555,7 +1555,7 @@ namespace HandheldCompanion.Properties {
         }
         
         /// <summary>
-        ///   Looks up a localized string similar to Experimental. May not work on every device. Blanks the screen and enters a critical suspend, using S3 when the firmware supports it.
+        ///   Looks up a localized string similar to Experimental. Pauses the foreground game while the device sleeps and brings it back right after wake. Games with anti-cheat are not paused.
         /// </summary>
         public static string DevicePage_QuickSleepDesc {
             get {
