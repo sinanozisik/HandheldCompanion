@@ -39,7 +39,7 @@ namespace HandheldCompanion.ViewModels
             {
                 switch (action)
                 {
-                    case "Sleep": PowerActionsHelper.Sleep(force: false); break;
+                    case "Sleep": await QuickSleep.Run(); break;
                     case "Hibernate":
                         if (PowerActionsHelper.IsHibernateAvailable())
                             PowerActionsHelper.Hibernate(force: false);
