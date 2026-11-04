@@ -2049,12 +2049,15 @@
         <Setter Property="IsEnabled" Value="{Binding IsEnabled, Mode=OneWay}" />
     </Style>
 
-    <!--  a stored value the list no longer offers reads dimmed and italic, in the list and in the closed combo  -->
+    <!--  the inherit choice reads italic like inherited parts of the row summaries; a stored value the list no longer offers reads dimmed and italic, in the list and in the closed combo  -->
     <DataTemplate x:Key="OverrideChoiceItemTemplate">
         <TextBlock Text="{Binding Label, Mode=OneWay}">
             <TextBlock.Style>
                 <Style TargetType="TextBlock">
                     <Style.Triggers>
+                        <DataTrigger Binding="{Binding IsInherit, Mode=OneTime}" Value="True">
+                            <Setter Property="FontStyle" Value="Italic" />
+                        </DataTrigger>
                         <DataTrigger Binding="{Binding IsStale, Mode=OneTime}" Value="True">
                             <Setter Property="FontStyle" Value="Italic" />
                             <Setter Property="Foreground" Value="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
