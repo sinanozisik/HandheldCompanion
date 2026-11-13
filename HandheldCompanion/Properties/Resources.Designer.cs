@@ -1546,6 +1546,24 @@ namespace HandheldCompanion.Properties {
         }
         
         /// <summary>
+        ///   Looks up a localized string similar to Quick Sleep/Wake.
+        /// </summary>
+        public static string DevicePage_QuickSleep {
+            get {
+                return ResourceManager.GetString("DevicePage_QuickSleep", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Looks up a localized string similar to Experimental. Pauses the foreground game while the device sleeps and brings it back right after wake. Games with anti-cheat are not paused.
+        /// </summary>
+        public static string DevicePage_QuickSleepDesc {
+            get {
+                return ResourceManager.GetString("DevicePage_QuickSleepDesc", resourceCulture);
+            }
+        }
+        
+        /// <summary>
         ///   Looks up a localized string similar to Sets the fan to max speed.
         /// </summary>
         public static string DevicePage_FullFanSpeedDesc {
