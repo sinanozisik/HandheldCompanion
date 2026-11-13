@@ -33,6 +33,8 @@ public static class QuickSleep
     private static ProcessEx? refocusOnly;
     // the game window to bring back after wake, zero when the game was not in front
     private static nint gameWindow;
+    // 1 when the frozen game was in front, or the first window behind Quick Tools
+    private static int bringToFront;
     private static int busy;
 
     // display state watcher, Modern Standby only
@@ -436,19 +438,19 @@ public static class QuickSleep
             await Thaw(refocus: true).ConfigureAwait(false);
     }
 
-    private sealed record FreezeTarget(ProcessEx Game, nint Window, List<Process> Children, string? AntiCheat);
+    private sealed record FreezeTarget(ProcessEx Game, nint Window, List<Process> Children, string? AntiCheat, bool WasInFront, string Reason);
 
     /// <summary>
-    /// Finds the game in front and its child processes, without freezing anything yet.
-    /// The target comes from the window in front, not from ProcessManager.GetCurrent(): that one can be stale,
-    /// for example for a game that was already in front when HC started.
+    /// Finds the game to freeze and its child processes, without freezing anything yet.
+    /// A game already in front, or the first window behind Quick Tools, is taken as-is.
+    /// Otherwise the front-most strongest window wins: a non-default profile, then a known platform, then one that covers its monitor.
     /// </summary>
     private static FreezeTarget? PrepareFreeze()
     {
         try
         {
-            // look at the window before the freeze, the game cannot answer once frozen
-            (nint window, string source) = FindTargetWindow();
+            // look at the windows before the freeze, the game cannot answer once frozen
+            (nint window, string source, bool wasInFront) = FindTargetWindow();
             if (window == 0)
             {
                 LogManager.LogInformation("[QuickSleep] No window to freeze ({0}).", source);
@@ -469,24 +471,16 @@ public static class QuickSleep
                 return null;
             }
 
-            bool platform = game.Platform != GamePlatform.Generic;
-            bool fullscreen = CoversMonitor(window);
-            if (!platform && !fullscreen)
-            {
-                LogManager.LogInformation("[QuickSleep] {0} (pid {1}, {2}) is not a game (platform {3}, fullscreen {4}), not freezing.", game.Executable, game.ProcessId, source, game.Platform, fullscreen);
-                return null;
-            }
-
-            LogManager.LogInformation("[QuickSleep] {0} (pid {1}, {2}) is a game (platform {3}, fullscreen {4}), refocus after wake.", game.Executable, game.ProcessId, source, game.Platform, fullscreen);
+            LogManager.LogInformation("[QuickSleep] {0} (pid {1}) selected by {2}, wasInFront {3}.", game.Executable, game.ProcessId, source, wasInFront);
 
             List<SnapshotEntry> snapshot = TakeProcessSnapshot();
             string? antiCheat = IsAntiCheatProtected(game, snapshot);
             List<Process> children = antiCheat is null ? GetChildProcesses(game.ProcessId, snapshot) : new();
-            return new FreezeTarget(game, window, children, antiCheat);
+            return new FreezeTarget(game, window, children, antiCheat, wasInFront, source);
         }
         catch (Exception ex)
         {
-            LogManager.LogWarning("[QuickSleep] Could not find the game in front: {0}", ex.Message);
+            LogManager.LogWarning("[QuickSleep] Could not find a game to freeze: {0}", ex.Message);
             return null;
         }
     }
@@ -619,6 +613,7 @@ public static class QuickSleep
                 LogManager.LogInformation("[QuickSleep] Anti-cheat detected ({0}), not freezing {1}.", target.AntiCheat, game.Executable);
                 if (target.Window != 0)
                 {
+                    Interlocked.Exchange(ref bringToFront, target.WasInFront ? 1 : 0);
                     Interlocked.Exchange(ref gameWindow, target.Window);
                     Interlocked.Exchange(ref refocusOnly, game);
                 }
@@ -635,6 +630,7 @@ public static class QuickSleep
             }
 
             // the window first, Thaw takes the game and then the window
+            Interlocked.Exchange(ref bringToFront, target.WasInFront ? 1 : 0);
             Interlocked.Exchange(ref gameWindow, target.Window);
             Interlocked.Exchange(ref frozen, game);
             LogManager.LogInformation("[QuickSleep] Froze {0} and {1} child process(es).", game.Executable, target.Children.Count);
@@ -647,6 +643,9 @@ public static class QuickSleep
 
     private static async Task Thaw(bool refocus)
     {
+        // a game behind another window stays where it was
+        bool focus = refocus && Interlocked.Exchange(ref bringToFront, 0) == 1;
+
         // take ownership once, so the wake handlers never thaw the same game twice
         ProcessEx? game = Interlocked.Exchange(ref frozen, null);
         if (game is null)
@@ -657,7 +656,7 @@ public static class QuickSleep
                 return;
 
             nint window = Interlocked.Exchange(ref gameWindow, 0);
-            if (refocus)
+            if (focus)
                 await Refocus(game, window).ConfigureAwait(false);
             return;
         }
@@ -676,7 +675,7 @@ public static class QuickSleep
             LogManager.LogWarning("[QuickSleep] Could not thaw {0}: {1}", game.Executable, ex.Message);
         }
 
-        if (refocus)
+        if (focus)
             await Refocus(game, hWnd).ConfigureAwait(false);
     }
 
@@ -826,7 +825,7 @@ public static class QuickSleep
     {
         try
         {
-            (nint window, _) = FindTargetWindow();
+            (nint window, _, _) = FindTargetWindow();
             if (window == 0)
                 return;
 
@@ -1033,31 +1032,133 @@ public static class QuickSleep
     }
 
     /// <summary>
-    /// The window in front, or the first eligible window right below Quick Tools when Quick Tools is in front.
-    /// Zero when there is none, with the reason as the source.
+    /// The game to freeze. A game already in front, or the first eligible window behind Quick Tools, is taken directly.
+    /// Otherwise the front-most strongest window: a non-default profile, then a known platform, then one that covers its monitor.
     /// </summary>
-    private static (nint Window, string Source) FindTargetWindow()
+    private static (nint Window, string Reason, bool WasInFront) FindTargetWindow()
     {
+        List<nint> windows = EnumerateTopLevel();
         nint foreground = WinAPI.GetForegroundWindow();
-        if (foreground == 0)
-            return (0, "no foreground window");
+        nint quickTools = GetQuickToolsHandle();
+        bool behindQuickTools = foreground != 0 && foreground == quickTools;
 
-        if (foreground != GetQuickToolsHandle())
-            return (foreground, "in front");
-
-        // first visible window below Quick Tools, skipping HC, hidden UWP frames and tool windows such as overlays
-        for (nint hWnd = WinAPI.GetWindow(foreground, WinAPI.GW_HWNDNEXT); hWnd != 0; hWnd = WinAPI.GetWindow(hWnd, WinAPI.GW_HWNDNEXT))
+        nint direct = 0;
+        if (!behindQuickTools && IsEligibleWindow(foreground))
+            direct = foreground;
+        else if (behindQuickTools)
         {
-            if (!ProcessUtils.IsWindowVisible(hWnd) || IsCloaked(hWnd) || GetWindowProcessId(hWnd) == Environment.ProcessId)
-                continue;
+            foreach (nint hWnd in windows)
+            {
+                if (!IsEligibleWindow(hWnd))
+                    continue;
 
-            if ((WinAPI.GetWindowLong(hWnd, WinAPI.GWL_EXSTYLE) & WinAPI.WS_EX_TOOLWINDOW) != 0)
-                continue;
-
-            return (hWnd, "behind Quick Tools");
+                direct = hWnd;
+                break;
+            }
         }
 
-        return (0, "nothing behind Quick Tools");
+        if (direct != 0 && TryRank(direct, out _, out string directReason))
+            return (direct, directReason, true);
+
+        nint best = 0;
+        int bestRank = 0;
+        string bestReason = "";
+        foreach (nint hWnd in windows)
+        {
+            if (!IsEligibleWindow(hWnd) || !TryRank(hWnd, out int rank, out string reason) || rank <= bestRank)
+                continue;
+
+            best = hWnd;
+            bestRank = rank;
+            bestReason = reason;
+        }
+
+        if (best == 0)
+            return (0, behindQuickTools ? "nothing behind Quick Tools" : "no game window", false);
+
+        return (best, bestReason, best == direct);
+    }
+
+    private static List<nint> EnumerateTopLevel()
+    {
+        List<nint> windows = new();
+        WinAPI.EnumWindows((hWnd, _) =>
+        {
+            windows.Add(hWnd);
+            return true;
+        }, IntPtr.Zero);
+        return windows;
+    }
+
+    // Visible top-level windows, including minimized ones. Cloaked, tool, and HC windows are not candidates.
+    private static bool IsEligibleWindow(nint hWnd)
+    {
+        if (hWnd == 0 || hWnd == GetShellWindow() || hWnd == WinAPI.GetDesktopWindow())
+            return false;
+
+        if (IsCloaked(hWnd) || GetWindowProcessId(hWnd) == Environment.ProcessId)
+            return false;
+
+        if ((WinAPI.GetWindowLong(hWnd, WinAPI.GWL_EXSTYLE) & WinAPI.WS_EX_TOOLWINDOW) != 0)
+            return false;
+
+        if (!ProcessUtils.IsWindowVisible(hWnd) && !ProcessUtils.IsIconic(hWnd))
+            return false;
+
+        string name = GetWindowClass(hWnd);
+        return name is not ("Progman" or "WorkerW" or "Shell_TrayWnd" or "Shell_SecondaryTrayWnd");
+    }
+
+    // 3 profile, 2 platform, 1 covers the monitor. Zero when the window is not a game.
+    private static bool TryRank(nint window, out int rank, out string reason)
+    {
+        rank = 0;
+        reason = "";
+
+        ProcessEx? game = ResolveProcess(window, log: false);
+        if (game is null || game.Process is null || game.Process.HasExited || game.IsSuspended)
+            return false;
+
+        if (GetNotGameReason(game, window) is not null)
+            return false;
+
+        if (HasNonDefaultProfile(game))
+        {
+            rank = 3;
+            reason = "profile";
+            return true;
+        }
+
+        if (game.Platform != GamePlatform.Generic)
+        {
+            rank = 2;
+            reason = "platform";
+            return true;
+        }
+
+        if (CoversMonitor(window))
+        {
+            rank = 1;
+            reason = "covers-monitor";
+            return true;
+        }
+
+        return false;
+    }
+
+    private static bool HasNonDefaultProfile(ProcessEx game)
+    {
+        if (string.IsNullOrEmpty(game.Path))
+            return false;
+
+        try
+        {
+            return !ManagerFactory.profileManager.GetProfileFromPath(game.Path, true).Default;
+        }
+        catch
+        {
+            return false;
+        }
     }
 
     private static async Task Refocus(ProcessEx game, nint hWnd)
