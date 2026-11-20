@@ -44,8 +44,8 @@ namespace HandheldCompanion.Targets
         protected virtual string DeviceType => string.Empty;
         public virtual int? MasterIntervalOverrideHz => null;
 
-        // false when the report has no gyro/accel fields, so motion alone never needs a report
-        public virtual bool HasMotion => true;
+        // false when the report has no gyro/accel fields, so gyro alone never needs a report
+        public virtual bool HasGyro => true;
 
         public bool IsConnected = false;
 

@@ -651,14 +651,14 @@ namespace HandheldCompanion.Managers
         }
 
         /// <summary>
-        /// Returns true when motion alone justifies a report: the target carries motion and a motion
-        /// source is active. A value threshold here acts as a deadzone and makes slow pans stair-step,
-        /// so motion targets get every tick while targets without motion ignore gyro entirely.
+        /// Compares gyro states to decide whether gyro alone justifies a report.
+        /// A value threshold here acts as a deadzone and makes slow pans stair-step,
+        /// so targets with gyro get every tick while targets without gyro ignore it entirely.
         /// </summary>
-        private static bool MotionNeedsReport()
+        private static bool GyroStateHasSignificantChange()
         {
-            // no gyro/accel fields in the report (xbox 360), motion alone changes nothing
-            if (vTarget is null || !vTarget.HasMotion)
+            // no gyro/accel fields in the report (xbox 360), gyro alone changes nothing
+            if (vTarget is null || !vTarget.HasGyro)
                 return false;
 
             return SensorsManager.ActiveSensorFamily != DeviceUtils.SensorFamily.None;
@@ -678,9 +678,9 @@ namespace HandheldCompanion.Managers
             {
                 bool buttonChanged = ButtonStateHasChanged(prevControllerState.ButtonState, controllerState.ButtonState);
                 bool axisChanged = AxisStateHasSignificantChange(prevControllerState.AxisState, controllerState.AxisState);
-                bool motionChanged = MotionNeedsReport();
+                bool gyroChanged = GyroStateHasSignificantChange();
 
-                if (!buttonChanged && !axisChanged && !motionChanged)
+                if (!buttonChanged && !axisChanged && !gyroChanged)
                     return; // No significant change, skip update
             }
 
