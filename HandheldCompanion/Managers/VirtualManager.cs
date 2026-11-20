@@ -511,7 +511,7 @@ namespace HandheldCompanion.Managers
             return mode switch
             {
                 HIDmode.DualShock4Controller => new DualShock4Target(0x054C, 0x05C4),
-                HIDmode.DualSenseController => new DualSenseTarget(0x054C, 0x0CE6),
+                HIDmode.DualSenseController => new DualSenseTarget(0x054C, 0x0DF2), // DualSense Edge PID (was 0x0CE6)
                 HIDmode.SteamDeckController => new SteamDeckTarget(0x28DE, 0x1205),
                 HIDmode.SteamController => new SteamControllerTarget(0x28DE, 0x1102),
                 HIDmode.SwitchProController => new SwitchProTarget(0x057E, 0x2069),

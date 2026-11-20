@@ -65,6 +65,11 @@ namespace HandheldCompanion.Targets
             if (inputs.ButtonState[ButtonFlags.Special]) buttons |= 0x00010000;
             if (touchpadClick || emitClick) buttons |= 0x00020000;
             if (inputs.ButtonState[ButtonFlags.B5]) buttons |= 0x00040000;
+            // DualSense Edge function buttons and back paddles (VIIPER ButtonEdge*)
+            if (inputs.ButtonState[ButtonFlags.LFn]) buttons |= 0x00100000;
+            if (inputs.ButtonState[ButtonFlags.RFn]) buttons |= 0x00200000;
+            if (inputs.ButtonState[ButtonFlags.L4]) buttons |= 0x00400000;
+            if (inputs.ButtonState[ButtonFlags.R4]) buttons |= 0x00800000;
             data[4] = (byte)(buttons & 0xFF);
             data[5] = (byte)((buttons >> 8) & 0xFF);
             data[6] = (byte)((buttons >> 16) & 0xFF);

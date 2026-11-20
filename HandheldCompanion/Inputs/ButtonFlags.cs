@@ -179,6 +179,10 @@ public enum ButtonFlags : byte
 
     HOTKEY_END = 150,
 
+    // DualSense Edge function buttons
+    [Description("Left Fn")] LFn = 151,
+    [Description("Right Fn")] RFn = 152,
+
     [Description("Touchpad Click")] TouchpadClick = 153,
     [Description("Touchpad Touch")] TouchpadTouch = 154,
     [Description("Touchpad Swipe")] TouchpadSwipe = 155,

@@ -12,6 +12,12 @@ namespace HandheldCompanion.Controllers.Dummies
             TargetButtons.Add(ButtonFlags.TouchpadClick);
             TargetButtons.Add(ButtonFlags.TouchpadTouch);
             TargetButtons.Add(ButtonFlags.B5);
+
+            // DualSense Edge back paddles and function buttons
+            TargetButtons.Add(ButtonFlags.L4);
+            TargetButtons.Add(ButtonFlags.R4);
+            TargetButtons.Add(ButtonFlags.LFn);
+            TargetButtons.Add(ButtonFlags.RFn);
             TargetAxis.Add(AxisLayoutFlags.LeftPad);
             TargetAxis.Add(AxisLayoutFlags.RightPad);
         }
