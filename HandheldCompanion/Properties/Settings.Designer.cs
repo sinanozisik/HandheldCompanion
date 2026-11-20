@@ -1704,6 +1704,18 @@ namespace HandheldCompanion.Properties
         
         [global::System.Configuration.UserScopedSettingAttribute()]
         [global::System.Diagnostics.DebuggerNonUserCodeAttribute()]
+        [global::System.Configuration.DefaultSettingValueAttribute("False")]
+        public bool QuickSleep {
+            get {
+                return ((bool)(this["QuickSleep"]));
+            }
+            set {
+                this["QuickSleep"] = value;
+            }
+        }
+        
+        [global::System.Configuration.UserScopedSettingAttribute()]
+        [global::System.Diagnostics.DebuggerNonUserCodeAttribute()]
         [global::System.Configuration.DefaultSettingValueAttribute("0")]
         public int MasterInterval {
             get {

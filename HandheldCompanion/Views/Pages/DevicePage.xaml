@@ -303,6 +303,17 @@
                         <ui:ToggleSwitch x:Name="Toggle_EnhancedSleep" Toggled="Toggle_EnhancedSleep_Toggled" />
                     </ui:SettingsCard>
 
+                    <!--  Quick Sleep  -->
+                    <ui:SettingsCard
+                        x:Name="QuickSleepCard"
+                        Description="{l:Static resx:Resources.DevicePage_QuickSleepDesc}"
+                        Header="{l:Static resx:Resources.DevicePage_QuickSleep}">
+                        <ui:SettingsCard.HeaderIcon>
+                            <ui:FontIcon Glyph="&#xE708;" />
+                        </ui:SettingsCard.HeaderIcon>
+                        <ui:ToggleSwitch x:Name="Toggle_QuickSleep" Toggled="Toggle_QuickSleep_Toggled" />
+                    </ui:SettingsCard>
+
                 </ikw:SimpleStackPanel>
             </ikw:SimpleStackPanel>
 
